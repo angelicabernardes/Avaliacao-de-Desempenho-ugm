@@ -332,6 +332,11 @@ var CATALOG = {"employees":[{"matricula":9,"nome":"MARCOS ANTONIO BRANDAO STRADI
 (function(){
 "use strict";
 
+// Guarda a estrutura original da página (cabeçalho, menu, área de conteúdo)
+// antes de a tela de login poder substituí-la — sem isso, depois de logar,
+// o código tentava preencher elementos que a tela de login tinha apagado.
+var APP_SHELL_HTML = document.getElementById("app").innerHTML;
+
 /* ============================================================================
    Login Microsoft (Azure AD / Entra ID) — restringe o acesso a contas
    @umgrauemeio.com. Usa o provedor "Microsoft" já embutido no Firebase
@@ -1330,6 +1335,8 @@ function updateUserBadge(user){
   });
 }
 function bootApp(user){
+  var app = document.getElementById("app");
+  if(!document.getElementById("view")) app.innerHTML = APP_SHELL_HTML;
   updateUserBadge(user);
   Store.ready.then(render);
   updateRHButton();
