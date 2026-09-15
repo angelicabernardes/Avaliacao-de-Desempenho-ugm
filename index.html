@@ -531,11 +531,11 @@ function showDeleteConfirmModal(e, ref){
 }
 
 /* ---- prazos e notificação por e-mail ----
-   MODO DE TESTE: ainda não existe coluna de e-mail na aba "Colaboradores" nem
-   lista de e-mail dos gestores, então por pedido da Angélica todo mundo recebe
-   o e-mail dela até validarmos o fluxo. Quando a planilha tiver e-mails reais,
-   troque TEST_EMAIL_OVERRIDE por null para usar CATALOG.employees[].email. */
-var TEST_EMAIL_OVERRIDE = "angelica.bernardes@umgrauemeio.com";
+   Modo de teste desligado: a planilha já tem e-mails reais de colaborador e
+   gestor (CATALOG.employees[].email / .gestorEmail), então as notificações
+   vão para a pessoa certa. Se precisar voltar a mandar tudo para um único
+   e-mail de teste, troque null por "algum.email@umgrauemeio.com" aqui. */
+var TEST_EMAIL_OVERRIDE = null;
 var SELF_DEADLINE_DAYS = 10;      // prazo do colaborador para a autoavaliação
 var FEEDBACK_DEADLINE_DAYS = 60;  // prazo do gestor para a avaliação de feedback (~2 meses)
 
