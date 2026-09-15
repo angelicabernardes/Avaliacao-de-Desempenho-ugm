@@ -710,7 +710,23 @@ var Store = (function(){
       add:function(data){
         var id=uid(); data.id=id; local[name][id]=data; fireLocal(name); return Promise.resolve({id:id});
       },
-      doc:function(id){ return localDoc(name,id); }
+      doc:function(id){ return localDoc(name,id); },
+      // mirrors the real db's .where(field,"==",value) enough for the demo/local fallback
+      // to keep working with the scoped dashboard queries below (only "==" is used in this app).
+      where:function(field, op, value){
+        return {
+          onSnapshot:function(cb){
+            function wrapped(){
+              var snap = buildQuerySnapshot(name);
+              var docs = snap.docs.filter(function(d){ var v=d.data(); return v && v[field]===value; });
+              cb({docs:docs, size:docs.length, empty:docs.length===0, docChanges:function(){return [];}, metadata:snap.metadata});
+            }
+            listeners[name]=listeners[name]||[]; listeners[name].push(wrapped);
+            wrapped();
+            return function(){ var i=listeners[name].indexOf(wrapped); if(i>-1) listeners[name].splice(i,1); };
+          }
+        };
+      }
     };
   }
   // mirrors the real db's update() contract: nested plain objects merge recursively,
@@ -818,11 +834,43 @@ function viewDashboard(){
   document.getElementById("f-search").addEventListener("input", drawTable);
   document.getElementById("f-status").addEventListener("change", drawTable);
 
-  var unsub = Store.evaluations().onSnapshot(function(snap){
-    var all = snap.docs.map(function(d){ var v=Object.assign({}, d.data()||{}); v.id=d.id; return v; });
-    window.__evals = all.filter(canSeeEvaluation);
-    drawTable();
-  }, function(err){ console.error(err); toast("Não foi possível carregar as avaliações."); });
+  // O RH (admin) escuta a coleção inteira. Qualquer outra pessoa NÃO pode: as regras do
+  // Firestore proíbem uma consulta sem filtro quando elas dependem de campos do documento
+  // (employeeEmail/managerEmail) — uma "list" sem where() que poderia trazer um documento
+  // fora da permissão do usuário é recusada por inteiro (nem os que ela poderia ver aparecem).
+  // Por isso, para quem não é RH, fazemos duas consultas já filtradas (uma por e-mail como
+  // colaborador, outra como gestor) e juntamos o resultado.
+  var unsub;
+  if(isRHAdmin()){
+    unsub = Store.evaluations().onSnapshot(function(snap){
+      var all = snap.docs.map(function(d){ var v=Object.assign({}, d.data()||{}); v.id=d.id; return v; });
+      window.__evals = all.filter(canSeeEvaluation);
+      drawTable();
+    }, function(err){ console.error(err); toast("Não foi possível carregar as avaliações."); });
+  } else {
+    var mine = currentUserEmail();
+    var byId = {};
+    var seenEmp = {}, seenMgr = {};
+    function mergeAndDraw(){
+      window.__evals = Object.keys(byId).map(function(id){ return byId[id]; });
+      drawTable();
+    }
+    var unsubEmp = Store.evaluations().where("employeeEmail","==",mine).onSnapshot(function(snap){
+      var ids = {};
+      snap.docs.forEach(function(d){ var v=Object.assign({}, d.data()||{}); v.id=d.id; byId[d.id]=v; ids[d.id]=true; });
+      Object.keys(seenEmp).forEach(function(id){ if(!ids[id] && (!byId[id] || (byId[id].managerEmail||"").toLowerCase()!==mine)) delete byId[id]; });
+      seenEmp = ids;
+      mergeAndDraw();
+    }, function(err){ console.error(err); toast("Não foi possível carregar as avaliações."); });
+    var unsubMgr = Store.evaluations().where("managerEmail","==",mine).onSnapshot(function(snap){
+      var ids = {};
+      snap.docs.forEach(function(d){ var v=Object.assign({}, d.data()||{}); v.id=d.id; byId[d.id]=v; ids[d.id]=true; });
+      Object.keys(seenMgr).forEach(function(id){ if(!ids[id] && (!byId[id] || (byId[id].employeeEmail||"").toLowerCase()!==mine)) delete byId[id]; });
+      seenMgr = ids;
+      mergeAndDraw();
+    }, function(err){ console.error(err); toast("Não foi possível carregar as avaliações."); });
+    unsub = function(){ unsubEmp(); unsubMgr(); };
+  }
   registerCleanup(unsub);
 
   function drawTable(){
