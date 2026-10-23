@@ -111,7 +111,7 @@ main{ flex:1; width:100%; }
 .btn.danger{ color:var(--s1); border-color:var(--s1); }
 
 label{ font-size:12.5px; font-weight:600; color:var(--text-muted); display:block; margin-bottom:5px; }
-input[type=text], input[type=date], input[type=search], select, textarea{
+input[type=text], input[type=date], input[type=search], input[type=number], select, textarea{
   width:100%; padding:9px 11px; border-radius:7px; border:1px solid var(--border-strong);
   background:var(--surface); color:var(--text); font-size:14px; font-family:inherit;
 }
@@ -835,6 +835,10 @@ var Store = (function(){
     tnd:function(id){
       if(useReal) return real.collection("tnd").doc(id);
       return localDoc("tnd", id);
+    },
+    tndCol:function(){
+      if(useReal) return real.collection("tnd");
+      return localCollection("tnd");
     }
   };
 })();
@@ -849,7 +853,7 @@ var Router = {
     if(parts[0]==="novo") return {page:"new"};
     if(parts[0]==="avaliacao" && parts[1]) return {page:"detail", id:parts[1], focus:parts[2]};
     if(parts[0]==="pdi"){ if(parts[1]){ var em=parts[1]; try{ em=decodeURIComponent(em); }catch(ex){} return {page:"pdi-detail", email:em}; } return {page:"pdi"}; }
-    if(parts[0]==="tnd") return {page:"tnd"};
+    if(parts[0]==="tnd") return {page: parts[1]==="base" ? "tnd-base" : "tnd"};
     return {page:"dashboard"};
   }
 };
@@ -1482,8 +1486,7 @@ function newPdiItem(o){
     metodo:"", treinamento:"", acao:"", prazo:"", prazoTexto:"",
     recursos:{humanos:false, materiais:false, logisticos:false},
     situacao:"nao_iniciado", dataConclusao:"", statusLegado:"",
-    ajustes:"", ultimo1x1:"", origemKey:"", origemEvalId:"", createdAt:Date.now(),
-    local:"", ministrante:"", cargaHoraria:0, qtdParticipantes:1, custo:0, prazoAvaliacao:"", resultadoAvaliacao:""
+    ajustes:"", ultimo1x1:"", origemKey:"", origemEvalId:"", createdAt:Date.now()
   }, o||{});
 }
 
@@ -1731,7 +1734,7 @@ function drawPdiDetail(email, data, exists, catEmp){
     return '<tr>'+
       '<td class="num">'+(i+1)+'</td>'+
       '<td>'+esc(it.metodo||"—")+(it.origemEvalId?' <a href="#/avaliacao/'+esc(it.origemEvalId)+'" title="Abrir avaliação de origem">↗</a>':'')+'</td>'+
-      '<td>'+(it.treinamento ? esc(it.treinamento)+((gc&&(it.cargaHoraria||it.custo)) ? '<div class="hint">'+(it.cargaHoraria?fmtHoras(it.cargaHoraria)+' × '+(it.qtdParticipantes||1)+' part.':'')+(it.custo?(it.cargaHoraria?' · ':'')+fmtBRL(it.custo):'')+'</div>' : '') : '<span class="hint">'+(gc?'a definir pela GC':'a definir')+'</span>')+'</td>'+
+      '<td>'+(it.treinamento ? esc(it.treinamento) : '<span class="hint">'+(gc?'a definir pela GC':'a definir')+'</span>')+'</td>'+
       '<td style="min-width:260px;white-space:pre-wrap;">'+esc(it.acao||"")+'</td>'+
       '<td class="num" style="min-width:110px;">'+prazoTxt+'</td>'+
       '<td class="num" title="H = humanos · M = materiais · L = logísticos">'+resourcesLabel(it)+'</td>'+
@@ -1812,18 +1815,6 @@ function showPdiItemModal(ctx){
         metodos.map(function(m){ return '<option value="'+esc(m)+'"'+(m===it.metodo?' selected':'')+'>'+esc(m)+'</option>'; }).join('')+'</select></div>'+
       '<div class="field"><label for="pm-treino">Treinamentos aplicados'+(ctx.canEditTreino?'':' <span class="hint">(definido pela GC)</span>')+'</label>'+
         '<input type="text" id="pm-treino" value="'+esc(it.treinamento||"")+'" '+(ctx.canEditTreino?'':'disabled')+' placeholder="Treinamento, curso ou trilha sugerida"></div>'+
-      (ctx.canEditTreino ?
-        '<div class="field" style="background:#f7f4ee;border-radius:10px;padding:10px 12px;"><label style="font-weight:700;">Dados do treinamento (alimentam o Painel T&amp;D)</label>'+
-          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
-            '<div><label for="pm-local" class="hint">Local / plataforma</label><input type="text" id="pm-local" value="'+esc(it.local||"")+'"></div>'+
-            '<div><label for="pm-mini" class="hint">Ministrante / instituição</label><input type="text" id="pm-mini" value="'+esc(it.ministrante||"")+'"></div>'+
-            '<div><label for="pm-ch" class="hint">Carga horária (h)</label><input type="number" step="0.5" min="0" id="pm-ch" value="'+esc(it.cargaHoraria||"")+'"></div>'+
-            '<div><label for="pm-qtd" class="hint">Qtd. participantes</label><input type="number" step="1" min="1" id="pm-qtd" value="'+esc(it.qtdParticipantes||1)+'"></div>'+
-            '<div><label for="pm-custo" class="hint">Custo de aquisição (R$)</label><input type="number" step="0.01" min="0" id="pm-custo" value="'+esc(it.custo||"")+'"></div>'+
-            '<div><label for="pm-pav" class="hint">Prazo p/ avaliação de resultado</label><input type="date" id="pm-pav" value="'+esc(/^\d{4}-\d{2}-\d{2}$/.test(it.prazoAvaliacao||"")?it.prazoAvaliacao:"")+'"></div>'+
-          '</div>'+
-          '<div style="margin-top:8px;"><label for="pm-rav" class="hint">Resultado da avaliação</label><input type="text" id="pm-rav" value="'+esc(it.resultadoAvaliacao||"")+'"></div>'+
-        '</div>' : '')+
       '<div class="field"><label for="pm-acao">Ações a implementar</label><textarea id="pm-acao" rows="4" placeholder="O que será desenvolvido / meta acordada">'+esc(it.acao||"")+'</textarea></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
         '<div class="field"><label for="pm-prazo">Prazo</label><input type="date" id="pm-prazo" value="'+esc(it.prazo||"")+'"></div>'+
@@ -1861,14 +1852,7 @@ function showPdiItemModal(ctx){
       ajustes:v("pm-ajustes"), ultimo1x1:v("pm-11") || (/^\d{4}-\d{2}-\d{2}$/.test(it.ultimo1x1||"") ? "" : (it.ultimo1x1||"")),
       recursos:{humanos:document.getElementById("pm-rh").checked, materiais:document.getElementById("pm-rm").checked, logisticos:document.getElementById("pm-rl").checked}
     });
-    if(ctx.canEditTreino){
-      out.treinamento = v("pm-treino").trim();
-      out.local = v("pm-local").trim(); out.ministrante = v("pm-mini").trim();
-      out.cargaHoraria = Math.max(0, parseFloat(String(v("pm-ch")).replace(",","."))||0);
-      out.qtdParticipantes = Math.max(1, parseInt(v("pm-qtd"),10)||1);
-      out.custo = Math.max(0, parseFloat(String(v("pm-custo")).replace(",","."))||0);
-      out.prazoAvaliacao = v("pm-pav"); out.resultadoAvaliacao = v("pm-rav").trim();
-    }
+    if(ctx.canEditTreino) out.treinamento = v("pm-treino").trim();
     if(!out.metodo){ toast("Escolha o método de levantamento."); return; }
     if(!out.acao){ toast("Descreva a ação a implementar."); return; }
     if(out.situacao==="concluido" && !out.dataConclusao && !out.statusLegado){ toast("Informe a data de conclusão."); return; }
@@ -1952,6 +1936,27 @@ function fmtHoras(v){ var n = Math.round(tndNum(v)*100)/100; return String(n).re
 function fmtPct1(v){ return (Math.round(tndNum(v)*10)/10).toFixed(1).replace(".",",")+"%"; }
 function itemHours(it){ return tndNum(it.cargaHoraria)*(tndNum(it.qtdParticipantes)||1); }
 function itemRefYear(it){ var r = it.prazo || it.dataConclusao || ""; return r ? Number(r.slice(0,4)) : 0; }
+var TND_ROW_FIELDS = ["local","ministrante","cargaHoraria","qtdParticipantes","custo","prazoAvaliacao","resultadoAvaliacao"];
+function tndRowId(email,itemId){ return "t_"+pdiId(email).replace(/[^a-z0-9@._-]/g,"_")+"__"+itemId; }
+function tndRowPick(o){ var r={}; TND_ROW_FIELDS.forEach(function(k){ if(o && o[k]!=null) r[k]=o[k]; }); return r; }
+function tndHasData(o){ return TND_ROW_FIELDS.some(function(k){ var v=o&&o[k]; return v!=null && v!=="" && v!==0 && !(k==="qtdParticipantes"&&v===1); }); }
+/* junta as ações do PDI com os dados de treinamento (guardados à parte, só a GC lê) */
+function tndMergeDocs(docs, rows){
+  return (docs||[]).map(function(d){
+    var c = Object.assign({}, d);
+    c.items = (d.items||[]).map(function(it){
+      var r = rows && rows[tndRowId(d.employeeEmail||d.id, it.id)];
+      return r ? Object.assign({}, it, tndRowPick(r)) : it;
+    });
+    return c;
+  });
+}
+function listenTndRows(cb){
+  return Store.tndCol().onSnapshot(function(snap){
+    var m = {}; snap.docs.forEach(function(d){ if(d.id.indexOf("t_")===0) m[d.id] = d.data(); });
+    cb(m);
+  }, function(err){ console.error(err); toast("Não foi possível carregar a Base de Treinamentos."); });
+}
 function isTrainingItem(it){ return !!String(it.treinamento||"").trim() && it.situacao!=="cancelado"; }
 
 /* cálculo puro (testável): devolve tudo que o painel desenha */
@@ -2110,10 +2115,11 @@ function viewTnd(){
     return;
   }
   root.innerHTML = '<p class="hint" style="color:var(--text-muted)">Carregando painel…</p>';
-  var st = {docs:null, extras:null, diag:null, cfg:null}, area = "", qColab = "";
-  function ready(){ return st.docs!=null && st.extras!=null && st.diag!=null && st.cfg!=null; }
+  var st = {docs:null, rows:null, extras:null, diag:null, cfg:null}, area = "", qColab = "";
+  function ready(){ return st.docs!=null && st.rows!=null && st.extras!=null && st.diag!=null && st.cfg!=null; }
   function fail(err){ console.error(err); toast("Não foi possível carregar o Painel T&D."); }
   registerCleanup(listenPdis(function(list){ st.docs = list; draw(); }));
+  registerCleanup(listenTndRows(function(m){ st.rows = m; draw(); }));
   registerCleanup(Store.tnd("extras").onSnapshot(function(s){ st.extras = (s.exists && s.data().registros) || []; draw(); }, fail));
   registerCleanup(Store.tnd("diagnostico").onSnapshot(function(s){ st.diag = (s.exists && s.data().linhas) || []; draw(); }, fail));
   registerCleanup(Store.tnd("config").onSnapshot(function(s){ st.cfg = (s.exists && s.data()) || {}; draw(); }, fail));
@@ -2122,7 +2128,7 @@ function viewTnd(){
     if(!ready()) return;
     var keepOpen = {}; root.querySelectorAll("details[data-k]").forEach(function(d){ keepOpen[d.getAttribute("data-k")] = d.open; });
     var cfg = Object.assign({}, TND_DEFAULT_CFG, st.cfg||{});
-    var d = tndCompute(st.docs, st.extras, st.diag, cfg, area);
+    var d = tndCompute(tndMergeDocs(st.docs, st.rows), st.extras, st.diag, cfg, area);
     var meses = TND_MESES;
     var pctCol = d.budgetPct>=100 ? "#DC3333" : "#C47A0E";
     var q = qColab.toLowerCase();
@@ -2133,8 +2139,8 @@ function viewTnd(){
     var projCs = meses.map(function(_,i){ return i<lastC ? null : (i===lastC ? d.cumC[i] : d.cumC[lastC] + (d.totalC/nC)*(i-lastC)); });
 
     root.innerHTML =
-      '<div class="dash-head"><div><h1>Painel T&D '+TND_YEAR+'</h1><p>Treinamento & Desenvolvimento — calculado ao vivo a partir dos PDIs. Acesso restrito à GC.</p></div>'+
-        '<div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn" onclick="Router.go(\'#/pdi\')">📋 PDIs</button>'+
+      '<div class="dash-head"><div><h1>Painel T&D '+TND_YEAR+'</h1><p>Treinamento & Desenvolvimento — calculado ao vivo a partir da Base de Treinamentos e dos PDIs. Acesso restrito à GC.</p></div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn" onclick="Router.go(\'#/pdi\')">📋 PDIs</button><button class="btn primary" onclick="Router.go(\'#/tnd/base\')">📚 Base de Treinamentos</button>'+
         '<button class="btn" id="tnd-import">⬆️ Importar BASE (JSON)</button></div></div>'+
       '<div class="filters" style="align-items:center;"><label for="tnd-area" style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Filtrar por área</label>'+
         '<select id="tnd-area"><option value="">Todas as áreas</option>'+d.areasAll.map(function(a){ return '<option value="'+esc(a)+'"'+(a===area?' selected':'')+'>'+esc(a)+'</option>'; }).join("")+'</select></div>'+
@@ -2281,7 +2287,7 @@ function showTndImportModal(){
   document.getElementById("modal-host").innerHTML =
     '<div class="modal-overlay" id="pdi-overlay"><div class="modal-card" style="max-width:600px;">'+
       '<div class="modal-head"><h3>Importar BASE_TND_2026</h3><button class="icon-btn" id="pdi-x" aria-label="Fechar">✕</button></div>'+
-      '<p class="hint">Escolha o arquivo <b>tnd_importacao.json</b>. Ele <b>completa</b> as ações do PDI com plataforma, ministrante, horas, participantes e custo (sem apagar nada que já foi editado), cria as poucas ações que só existiam na BASE e traz as turmas coletivas, o diagnóstico individual e a configuração. Pode ser repetido sem duplicar.</p>'+
+      '<p class="hint">Escolha o arquivo <b>tnd_importacao.json</b>. Ele preenche a <b>Base de Treinamentos</b> (plataforma, ministrante, horas, participantes e custo — visíveis só à GC), cria as poucas ações que só existiam na BASE e traz as turmas coletivas, o diagnóstico individual e a configuração. Não sobrescreve o que já foi editado e pode ser repetido sem duplicar.</p>'+
       '<div class="field"><input type="file" id="tnd-file" accept=".json,application/json"></div>'+
       '<div id="tnd-imp-info" class="hint"></div>'+
       '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;"><button class="btn" id="tnd-imp-cancel">Fechar</button><button class="btn primary" id="tnd-imp-go" disabled>Importar</button></div>'+
@@ -2313,19 +2319,36 @@ function showTndImportModal(){
       chain = chain.then(function(){
         var email = pdiId(p.employeeEmail);
         var emp = {email:email, nome:p.employeeName, funcao:p.cargo, area:p.area, dtAdmissao:p.admissao, gestor:p.gestor, gestorEmail:p.managerEmail};
+        var byKey = {}, legacy = {}, entries = [], itemsRef = [];
+        p.patches.forEach(function(pt){ entries.push({origemKey:pt.origemKey, fields:pt.fields}); });
         return pdiUpdateItems(email, emp, function(list){
-          p.patches.forEach(function(pt){
-            var it = list.find(function(x){ return x.origemKey===pt.origemKey; });
-            if(!it) return;
-            Object.keys(pt.fields).forEach(function(k){
-              var cur = it[k], nv = pt.fields[k];
-              if(cur==null || cur==="" || (typeof cur==="number" && cur===0) || (k==="qtdParticipantes" && cur===1)) it[k] = nv;
-            });
-          });
           p.newItems.forEach(function(raw){
             if(list.some(function(x){ return x.origemKey===raw.origemKey; })) return;
-            list.push(newPdiItem(raw));
+            var base = Object.assign({}, raw); TND_ROW_FIELDS.forEach(function(k){ delete base[k]; });
+            list.push(newPdiItem(base));
           });
+          p.newItems.forEach(function(raw){ entries.push({origemKey:raw.origemKey, fields:tndRowPick(raw)}); });
+          list.forEach(function(it){
+            if(it.origemKey) byKey[it.origemKey] = it.id;
+            // versão anterior gravava custo/horas dentro do PDI: migra para a Base e limpa o PDI
+            if(tndHasData(it)){ legacy[it.id] = tndRowPick(it); TND_ROW_FIELDS.forEach(function(k){ delete it[k]; }); }
+            itemsRef.push({id:it.id});
+          });
+        }).then(function(){
+          var writes = {};
+          entries.forEach(function(en){ var id = byKey[en.origemKey]; if(id) writes[id] = Object.assign({}, en.fields); });
+          Object.keys(legacy).forEach(function(id){ writes[id] = Object.assign({}, writes[id]||{}, legacy[id]); });
+          var ch = Promise.resolve();
+          Object.keys(writes).forEach(function(id){
+            ch = ch.then(function(){
+              var ref = Store.tnd(tndRowId(email, id));
+              return ref.get().then(function(s){
+                if(s.exists) return; // não sobrescreve o que já foi editado
+                return ref.set(Object.assign({employeeEmail:email, itemId:id, updatedAt:Date.now()}, writes[id]));
+              });
+            });
+          });
+          return ch;
         }).then(function(){ done++; info.textContent = "Importando… "+done+" de "+parsed.pessoas.length; })
           .catch(function(err){ console.error(err); failed.push(p.employeeName||email); });
       });
@@ -2353,6 +2376,147 @@ function showTndImportModal(){
 }
 
 
+/* ============ Base de Treinamentos (substitui a aba BASE_TREINAMENTOS) ============
+   Cada linha é uma ação de treinamento do PDI. Método, treinamento, prazo, situação e conclusão
+   continuam no PDI (uma única digitação); horas, custo, ministrante etc. ficam aqui, só para a GC. */
+function viewTndBase(){
+  renderBreadcrumb({page:"tnd-base"}, "Base de Treinamentos");
+  var root = document.getElementById("view");
+  if(!isGCAdmin()){
+    root.innerHTML = '<div class="empty"><div class="big">Acesso restrito</div>A Base de Treinamentos é restrita à equipe de Gente & Cultura.</div>';
+    return;
+  }
+  root.innerHTML = '<p class="hint" style="color:var(--text-muted)">Carregando…</p>';
+  var st = {docs:null, rows:null}, fAno = String(TND_YEAR), fArea = "", fSit = "", q = "";
+  function fail(){}
+  registerCleanup(listenPdis(function(l){ st.docs = l; draw(); }));
+  registerCleanup(listenTndRows(function(m){ st.rows = m; draw(); }));
+
+  function lines(){
+    var out = [];
+    tndMergeDocs(st.docs, st.rows).forEach(function(d){
+      var email = pdiId(d.employeeEmail||d.id);
+      (d.items||[]).forEach(function(it){
+        if(!isTrainingItem(it)) return;
+        out.push({email:email, nome:d.employeeName||email, area:d.area||"", it:it, st:pdiItemStatus(it), ano:itemRefYear(it)});
+      });
+    });
+    out.sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||"","pt-BR") || (a.it.prazo||"").localeCompare(b.it.prazo||""); });
+    return out;
+  }
+  function draw(){
+    if(st.docs==null || st.rows==null) return;
+    var all = lines();
+    var anos = {}, areas = {};
+    all.forEach(function(l){ anos[l.ano||0]=true; if(l.area) areas[l.area]=true; });
+    var list = all.filter(function(l){
+      if(fAno && String(l.ano||0)!==fAno) return false;
+      if(fArea && l.area!==fArea) return false;
+      if(fSit && l.st.key!==fSit) return false;
+      if(q && (l.nome+" "+l.it.treinamento+" "+(l.it.ministrante||"")+" "+(l.it.local||"")).toLowerCase().indexOf(q.toLowerCase())<0) return false;
+      return true;
+    });
+    var h = 0, c = 0; list.forEach(function(l){ if(l.it.situacao==="concluido") h += itemHours(l.it); c += tndNum(l.it.custo); });
+    var sitOpts = [["dentro","Realizado dentro prazo"],["fora","Realizado fora prazo"],["andamento","Em realização"],["atrasado","Em atraso"],["nao_realizado","Não realizado"],["nao_iniciado","Não iniciado"]];
+    var kq = document.activeElement && document.activeElement.id==="tb-q";
+    root.innerHTML =
+      '<div class="dash-head"><div><h1>Base de Treinamentos</h1><p>Uma linha por treinamento. Método, prazo, situação e conclusão são os do PDI do colaborador (alimentados aqui ou lá, é o mesmo dado); horas, participantes, custo e ministrante ficam só aqui, visíveis apenas à GC.</p></div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn" onclick="Router.go(\'#/tnd\')">📊 Painel T&amp;D</button><button class="btn" onclick="Router.go(\'#/pdi\')">📋 PDIs</button>'+
+        '<button class="btn primary" id="tb-new">+ Novo treinamento</button></div></div>'+
+      '<div class="filters" style="align-items:center;gap:10px;flex-wrap:wrap;">'+
+        '<input type="search" id="tb-q" placeholder="Buscar colaborador, treinamento ou ministrante…" value="'+esc(q)+'" style="min-width:260px;">'+
+        '<select id="tb-ano"><option value="">Todos os anos</option>'+Object.keys(anos).sort().map(function(a){ return '<option value="'+a+'"'+(a===fAno?' selected':'')+'>'+(a==="0"?'Sem data':a)+'</option>'; }).join("")+'</select>'+
+        '<select id="tb-area"><option value="">Todas as áreas</option>'+Object.keys(areas).sort().map(function(a){ return '<option value="'+esc(a)+'"'+(a===fArea?' selected':'')+'>'+esc(a)+'</option>'; }).join("")+'</select>'+
+        '<select id="tb-sit"><option value="">Todas as situações</option>'+sitOpts.map(function(o){ return '<option value="'+o[0]+'"'+(o[0]===fSit?' selected':'')+'>'+o[1]+'</option>'; }).join("")+'</select>'+
+        '<span class="hint">'+list.length+' treinamentos · '+fmtHoras(h)+' realizadas · '+fmtBRL(c)+' <span style="color:var(--text-muted)">(sem turmas coletivas, que ficam no Painel T&amp;D)</span></span></div>'+
+      (list.length ? '<div class="table-wrap"><table class="dash" style="min-width:1180px;"><thead><tr><th>Colaborador</th><th>Área</th><th>Método</th><th>Treinamento</th><th>Prazo</th><th>Situação</th><th>Conclusão</th><th>Local / plataforma</th><th>Ministrante</th><th class="num">CH (h)</th><th class="num">Part.</th><th class="num">Custo</th><th></th></tr></thead><tbody>'+
+        list.map(function(l,i){ var it=l.it;
+          return '<tr><td class="person"><div class="name">'+esc(l.nome)+'</div></td><td>'+esc(l.area)+'</td><td>'+esc(it.metodo||"")+'</td><td>'+esc(it.treinamento)+'</td>'+
+            '<td>'+(it.prazo?fmtDateISOtoBR(it.prazo):'<span class="hint">—</span>')+'</td><td>'+pdiPill(l.st)+'</td><td>'+(it.dataConclusao?fmtDateISOtoBR(it.dataConclusao):'')+'</td>'+
+            '<td>'+esc(it.local||"")+'</td><td>'+esc(it.ministrante||"")+'</td><td class="num">'+(tndNum(it.cargaHoraria)||"")+'</td><td class="num">'+(tndNum(it.qtdParticipantes)||1)+'</td><td class="num">'+(tndNum(it.custo)?fmtBRL(it.custo):"")+'</td>'+
+            '<td><button class="btn tb-edit" data-i="'+i+'">Editar</button></td></tr>'; }).join("")+'</tbody></table></div>'
+        : '<div class="empty"><div class="big">Nenhum treinamento neste filtro</div>Use “+ Novo treinamento” ou importe a BASE no Painel T&amp;D.</div>');
+    var qi = document.getElementById("tb-q");
+    qi.addEventListener("input", function(){ q = qi.value; var pos = qi.selectionStart; draw(); var q2=document.getElementById("tb-q"); q2.focus(); try{ q2.setSelectionRange(pos,pos); }catch(ex){} });
+    if(kq){ qi.focus(); try{ qi.setSelectionRange(qi.value.length, qi.value.length); }catch(ex){} }
+    document.getElementById("tb-ano").addEventListener("change", function(){ fAno = this.value; draw(); });
+    document.getElementById("tb-area").addEventListener("change", function(){ fArea = this.value; draw(); });
+    document.getElementById("tb-sit").addEventListener("change", function(){ fSit = this.value; draw(); });
+    document.getElementById("tb-new").addEventListener("click", function(){ showTrainModal({isNew:true, email:"", it:newPdiItem({metodo:"LNT", qtdParticipantes:1, cargaHoraria:0, custo:0})}); });
+    root.querySelectorAll(".tb-edit").forEach(function(b){ b.addEventListener("click", function(){
+      var l = list[Number(b.getAttribute("data-i"))]; showTrainModal({isNew:false, email:l.email, it:Object.assign({}, l.it)});
+    }); });
+  }
+}
+
+function showTrainModal(ctx){
+  var it = ctx.it, isNew = ctx.isNew;
+  var metodos = PDI_METODOS.slice(); if(it.metodo && metodos.indexOf(it.metodo)===-1) metodos.push(it.metodo);
+  var emps = CATALOG.employees.slice().sort(function(a,b){ return (a.nome||"").localeCompare(b.nome||"","pt-BR"); });
+  var empName = (employeeByEmail(ctx.email)||{}).nome || ctx.email;
+  document.getElementById("modal-host").innerHTML =
+    '<div class="modal-overlay" id="pdi-overlay"><div class="modal-card" style="max-width:680px;">'+
+      '<div class="modal-head"><h3>'+(isNew?'Novo treinamento':'Editar treinamento')+'</h3><button class="icon-btn" id="pdi-x" aria-label="Fechar">✕</button></div>'+
+      '<div class="field"><label for="tm-emp">Colaborador</label>'+(isNew ?
+        '<select id="tm-emp"><option value="">Selecione…</option>'+emps.map(function(e){ return '<option value="'+esc(pdiId(e.email))+'">'+esc(e.nome)+' — '+esc(e.area||"")+'</option>'; }).join("")+'</select>'
+        : '<input type="text" id="tm-emp" value="'+esc(empName)+'" disabled>')+'</div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+        '<div class="field"><label for="tm-metodo">Método de levantamento (LNT)</label><select id="tm-metodo">'+metodos.map(function(m){ return '<option value="'+esc(m)+'"'+(m===it.metodo?' selected':'')+'>'+esc(m)+'</option>'; }).join("")+'</select></div>'+
+        '<div class="field"><label for="tm-treino">Treinamento</label><input type="text" id="tm-treino" value="'+esc(it.treinamento||"")+'"></div>'+
+        '<div class="field"><label for="tm-prazo">Prazo</label><input type="date" id="tm-prazo" value="'+esc(it.prazo||"")+'"></div>'+
+        '<div class="field"><label for="tm-sit">Situação</label><select id="tm-sit">'+PDI_SITUACOES.map(function(s){ return '<option value="'+s.v+'"'+(s.v===it.situacao?' selected':'')+'>'+s.l+'</option>'; }).join("")+'</select></div>'+
+        '<div class="field"><label for="tm-conc">Data de conclusão</label><input type="date" id="tm-conc" value="'+esc(it.dataConclusao||"")+'"></div>'+
+      '</div>'+
+      '<div class="field" style="background:#f7f4ee;border-radius:10px;padding:10px 12px;"><label style="font-weight:700;">Dados do treinamento (só GC — não aparecem no PDI do colaborador)</label>'+
+        '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
+          '<div class="field" style="margin:0;"><label for="tm-local" class="hint">Local / plataforma</label><input type="text" id="tm-local" value="'+esc(it.local||"")+'"></div>'+
+          '<div class="field" style="margin:0;"><label for="tm-mini" class="hint">Ministrante / instituição</label><input type="text" id="tm-mini" value="'+esc(it.ministrante||"")+'"></div>'+
+          '<div class="field" style="margin:0;"><label for="tm-ch" class="hint">Carga horária (h)</label><input type="number" step="0.25" min="0" id="tm-ch" value="'+esc(it.cargaHoraria||"")+'"></div>'+
+          '<div class="field" style="margin:0;"><label for="tm-qtd" class="hint">Qtd. participantes</label><input type="number" step="1" min="1" id="tm-qtd" value="'+esc(it.qtdParticipantes||1)+'"></div>'+
+          '<div class="field" style="margin:0;"><label for="tm-custo" class="hint">Custo de aquisição (R$)</label><input type="number" step="0.01" min="0" id="tm-custo" value="'+esc(it.custo||"")+'"></div>'+
+          '<div class="field" style="margin:0;"><label for="tm-pav" class="hint">Prazo p/ avaliação de resultado</label><input type="date" id="tm-pav" value="'+esc(/^\d{4}-\d{2}-\d{2}$/.test(it.prazoAvaliacao||"")?it.prazoAvaliacao:"")+'"></div>'+
+        '</div><div class="field" style="margin:8px 0 0;"><label for="tm-rav" class="hint">Resultado da avaliação</label><input type="text" id="tm-rav" value="'+esc(it.resultadoAvaliacao||"")+'"></div></div>'+
+      (isNew ? '<p class="hint">Ao salvar, a ação também entra no PDI do colaborador.</p>' : '')+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:8px;"><button class="btn" id="tm-cancel">Cancelar</button><button class="btn primary" id="tm-save">Salvar</button></div>'+
+    '</div></div>';
+  function v(id){ return document.getElementById(id).value; }
+  document.getElementById("pdi-x").addEventListener("click", closePdiModal);
+  document.getElementById("tm-cancel").addEventListener("click", closePdiModal);
+  document.getElementById("pdi-overlay").addEventListener("click", function(ev){ if(ev.target.id==="pdi-overlay") closePdiModal(); });
+  document.getElementById("tm-save").addEventListener("click", function(){
+    var btn = this;
+    var email = isNew ? pdiId(v("tm-emp")) : ctx.email;
+    var f = {metodo:v("tm-metodo"), treinamento:v("tm-treino").trim(), prazo:v("tm-prazo"), situacao:v("tm-sit"), dataConclusao:v("tm-conc")};
+    var row = {
+      local:v("tm-local").trim(), ministrante:v("tm-mini").trim(),
+      cargaHoraria:Math.max(0, parseFloat(String(v("tm-ch")).replace(",","."))||0),
+      qtdParticipantes:Math.max(1, parseInt(v("tm-qtd"),10)||1),
+      custo:Math.max(0, parseFloat(String(v("tm-custo")).replace(",","."))||0),
+      prazoAvaliacao:v("tm-pav"), resultadoAvaliacao:v("tm-rav").trim()
+    };
+    if(!email){ toast("Escolha o colaborador."); return; }
+    if(!f.treinamento){ toast("Informe o nome do treinamento."); return; }
+    if(f.situacao==="concluido" && !f.dataConclusao && !it.statusLegado){ toast("Informe a data de conclusão."); return; }
+    if(f.situacao!=="concluido") f.dataConclusao = "";
+    btn.disabled = true;
+    var emp = employeeByEmail(email) || {email:email};
+    var itemId = it.id;
+    pdiUpdateItems(email, emp, function(list){
+      var cur = list.find(function(x){ return x.id===itemId; });
+      if(!cur){
+        cur = newPdiItem({id:itemId, acao:"Realizar: "+f.treinamento, origemKey:"tnd:u"+Date.now().toString(36)});
+        list.push(cur);
+      }
+      Object.assign(cur, f);
+      if(!cur.acao) cur.acao = "Realizar: "+f.treinamento;
+      TND_ROW_FIELDS.forEach(function(k){ delete cur[k]; });
+    }).then(function(){
+      return Store.tnd(tndRowId(email, itemId)).set(Object.assign({employeeEmail:email, itemId:itemId, updatedAt:Date.now()}, row));
+    }).then(function(){ toast("Treinamento salvo."); closePdiModal(); })
+      .catch(function(err){ console.error(err); toast("Não foi possível salvar."); btn.disabled = false; });
+  });
+}
+
 
 /* ============ Render dispatcher ============ */
 function render(){
@@ -2364,6 +2528,7 @@ function render(){
   else if(route.page==="pdi") viewPdiList();
   else if(route.page==="pdi-detail") viewPdiDetail(route.email);
   else if(route.page==="tnd") viewTnd();
+  else if(route.page==="tnd-base") viewTndBase();
 }
 
 function updateUserBadge(user){
