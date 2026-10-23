@@ -705,7 +705,7 @@ function factorByName(name){ return CATALOG.competencyFactors.find(function(f){r
 /* ============ Store (real db or local fallback) ============ */
 var Store = (function(){
   var real = null, ready = null, useReal = false;
-  var local = { evaluations: {}, pdis: {} };
+  var local = { evaluations: {}, pdis: {}, tnd: {} };
   var listeners = {}; // collection listeners for local mode
 
   function seedLocalDemo(){
@@ -831,6 +831,10 @@ var Store = (function(){
     pdi:function(id){
       if(useReal) return real.collection("pdis").doc(id);
       return localDoc("pdis", id);
+    },
+    tnd:function(id){
+      if(useReal) return real.collection("tnd").doc(id);
+      return localDoc("tnd", id);
     }
   };
 })();
@@ -845,6 +849,7 @@ var Router = {
     if(parts[0]==="novo") return {page:"new"};
     if(parts[0]==="avaliacao" && parts[1]) return {page:"detail", id:parts[1], focus:parts[2]};
     if(parts[0]==="pdi"){ if(parts[1]){ var em=parts[1]; try{ em=decodeURIComponent(em); }catch(ex){} return {page:"pdi-detail", email:em}; } return {page:"pdi"}; }
+    if(parts[0]==="tnd") return {page:"tnd"};
     return {page:"dashboard"};
   }
 };
@@ -1477,7 +1482,8 @@ function newPdiItem(o){
     metodo:"", treinamento:"", acao:"", prazo:"", prazoTexto:"",
     recursos:{humanos:false, materiais:false, logisticos:false},
     situacao:"nao_iniciado", dataConclusao:"", statusLegado:"",
-    ajustes:"", ultimo1x1:"", origemKey:"", origemEvalId:"", createdAt:Date.now()
+    ajustes:"", ultimo1x1:"", origemKey:"", origemEvalId:"", createdAt:Date.now(),
+    local:"", ministrante:"", cargaHoraria:0, qtdParticipantes:1, custo:0, prazoAvaliacao:"", resultadoAvaliacao:""
   }, o||{});
 }
 
@@ -1600,7 +1606,7 @@ function viewPdiList(){
       '</p></div>'+
       '<div style="display:flex;gap:10px;flex-wrap:wrap;">'+
         '<button class="btn" onclick="Router.go(\'#/\')">← Avaliações</button>'+
-        (gc ? '<button class="btn" id="pdi-import-btn">⬆️ Importar histórico (JSON)</button>' : '')+
+        (gc ? '<button class="btn" onclick="Router.go(\'#/tnd\')">📊 Painel T&amp;D</button><button class="btn" id="pdi-import-btn">⬆️ Importar histórico (JSON)</button>' : '')+
       '</div>'+
     '</div>'+
     (Store.isDemo() ? '<div class="banner warn">Modo de demonstração local — os dados abaixo não são salvos.</div>' : '')+
@@ -1725,7 +1731,7 @@ function drawPdiDetail(email, data, exists, catEmp){
     return '<tr>'+
       '<td class="num">'+(i+1)+'</td>'+
       '<td>'+esc(it.metodo||"—")+(it.origemEvalId?' <a href="#/avaliacao/'+esc(it.origemEvalId)+'" title="Abrir avaliação de origem">↗</a>':'')+'</td>'+
-      '<td>'+(it.treinamento ? esc(it.treinamento) : '<span class="hint">'+(gc?'a definir pela GC':'a definir')+'</span>')+'</td>'+
+      '<td>'+(it.treinamento ? esc(it.treinamento)+((gc&&(it.cargaHoraria||it.custo)) ? '<div class="hint">'+(it.cargaHoraria?fmtHoras(it.cargaHoraria)+' × '+(it.qtdParticipantes||1)+' part.':'')+(it.custo?(it.cargaHoraria?' · ':'')+fmtBRL(it.custo):'')+'</div>' : '') : '<span class="hint">'+(gc?'a definir pela GC':'a definir')+'</span>')+'</td>'+
       '<td style="min-width:260px;white-space:pre-wrap;">'+esc(it.acao||"")+'</td>'+
       '<td class="num" style="min-width:110px;">'+prazoTxt+'</td>'+
       '<td class="num" title="H = humanos · M = materiais · L = logísticos">'+resourcesLabel(it)+'</td>'+
@@ -1806,6 +1812,18 @@ function showPdiItemModal(ctx){
         metodos.map(function(m){ return '<option value="'+esc(m)+'"'+(m===it.metodo?' selected':'')+'>'+esc(m)+'</option>'; }).join('')+'</select></div>'+
       '<div class="field"><label for="pm-treino">Treinamentos aplicados'+(ctx.canEditTreino?'':' <span class="hint">(definido pela GC)</span>')+'</label>'+
         '<input type="text" id="pm-treino" value="'+esc(it.treinamento||"")+'" '+(ctx.canEditTreino?'':'disabled')+' placeholder="Treinamento, curso ou trilha sugerida"></div>'+
+      (ctx.canEditTreino ?
+        '<div class="field" style="background:#f7f4ee;border-radius:10px;padding:10px 12px;"><label style="font-weight:700;">Dados do treinamento (alimentam o Painel T&amp;D)</label>'+
+          '<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">'+
+            '<div><label for="pm-local" class="hint">Local / plataforma</label><input type="text" id="pm-local" value="'+esc(it.local||"")+'"></div>'+
+            '<div><label for="pm-mini" class="hint">Ministrante / instituição</label><input type="text" id="pm-mini" value="'+esc(it.ministrante||"")+'"></div>'+
+            '<div><label for="pm-ch" class="hint">Carga horária (h)</label><input type="number" step="0.5" min="0" id="pm-ch" value="'+esc(it.cargaHoraria||"")+'"></div>'+
+            '<div><label for="pm-qtd" class="hint">Qtd. participantes</label><input type="number" step="1" min="1" id="pm-qtd" value="'+esc(it.qtdParticipantes||1)+'"></div>'+
+            '<div><label for="pm-custo" class="hint">Custo de aquisição (R$)</label><input type="number" step="0.01" min="0" id="pm-custo" value="'+esc(it.custo||"")+'"></div>'+
+            '<div><label for="pm-pav" class="hint">Prazo p/ avaliação de resultado</label><input type="date" id="pm-pav" value="'+esc(/^\d{4}-\d{2}-\d{2}$/.test(it.prazoAvaliacao||"")?it.prazoAvaliacao:"")+'"></div>'+
+          '</div>'+
+          '<div style="margin-top:8px;"><label for="pm-rav" class="hint">Resultado da avaliação</label><input type="text" id="pm-rav" value="'+esc(it.resultadoAvaliacao||"")+'"></div>'+
+        '</div>' : '')+
       '<div class="field"><label for="pm-acao">Ações a implementar</label><textarea id="pm-acao" rows="4" placeholder="O que será desenvolvido / meta acordada">'+esc(it.acao||"")+'</textarea></div>'+
       '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
         '<div class="field"><label for="pm-prazo">Prazo</label><input type="date" id="pm-prazo" value="'+esc(it.prazo||"")+'"></div>'+
@@ -1843,7 +1861,14 @@ function showPdiItemModal(ctx){
       ajustes:v("pm-ajustes"), ultimo1x1:v("pm-11") || (/^\d{4}-\d{2}-\d{2}$/.test(it.ultimo1x1||"") ? "" : (it.ultimo1x1||"")),
       recursos:{humanos:document.getElementById("pm-rh").checked, materiais:document.getElementById("pm-rm").checked, logisticos:document.getElementById("pm-rl").checked}
     });
-    if(ctx.canEditTreino) out.treinamento = v("pm-treino").trim();
+    if(ctx.canEditTreino){
+      out.treinamento = v("pm-treino").trim();
+      out.local = v("pm-local").trim(); out.ministrante = v("pm-mini").trim();
+      out.cargaHoraria = Math.max(0, parseFloat(String(v("pm-ch")).replace(",","."))||0);
+      out.qtdParticipantes = Math.max(1, parseInt(v("pm-qtd"),10)||1);
+      out.custo = Math.max(0, parseFloat(String(v("pm-custo")).replace(",","."))||0);
+      out.prazoAvaliacao = v("pm-pav"); out.resultadoAvaliacao = v("pm-rav").trim();
+    }
     if(!out.metodo){ toast("Escolha o método de levantamento."); return; }
     if(!out.acao){ toast("Descreva a ação a implementar."); return; }
     if(out.situacao==="concluido" && !out.dataConclusao && !out.statusLegado){ toast("Informe a data de conclusão."); return; }
@@ -1911,6 +1936,424 @@ function showPdiImportModal(){
   });
 }
 
+/* ============ Painel T&D (restrito à GC: Angélica e Gabryella) ============
+   Substitui o dashboard_tnd_2026.html + BASE_TND_2026.xlsx. Tudo é calculado ao vivo a partir
+   das ações do PDI (campos de treinamento: horas, participantes, custo...), das turmas
+   coletivas/registros avulsos (doc tnd/extras), do diagnóstico (tnd/diagnostico) e da
+   configuração (tnd/config: budget, meta de horas e headcount mensal). */
+var TND_YEAR = 2026;
+var TND_MESES = ["Jan","Fev","Mar","Abr","Mai","Jun","Jul","Ago","Set","Out","Nov","Dez"];
+var TND_DEFAULT_CFG = {budgetTotal:17000, metaHorasColabAno:15, hcMensal:[null,null,null,null,null,null,null,null,null,null,null,null]};
+
+function tndNorm(s){ return String(s||"").normalize("NFD").replace(/[̀-ͯ]/g,"").toUpperCase().replace(/[^A-Z0-9]/g,""); }
+function tndNum(x){ var n = Number(x); return isFinite(n) ? n : 0; }
+function fmtBRL(v){ return "R$ "+tndNum(v).toLocaleString("pt-BR",{minimumFractionDigits:2, maximumFractionDigits:2}); }
+function fmtHoras(v){ var n = Math.round(tndNum(v)*100)/100; return String(n).replace(".",",")+"h"; }
+function fmtPct1(v){ return (Math.round(tndNum(v)*10)/10).toFixed(1).replace(".",",")+"%"; }
+function itemHours(it){ return tndNum(it.cargaHoraria)*(tndNum(it.qtdParticipantes)||1); }
+function itemRefYear(it){ var r = it.prazo || it.dataConclusao || ""; return r ? Number(r.slice(0,4)) : 0; }
+function isTrainingItem(it){ return !!String(it.treinamento||"").trim() && it.situacao!=="cancelado"; }
+
+/* cálculo puro (testável): devolve tudo que o painel desenha */
+function tndCompute(docs, extras, diag, cfg, areaFilter, today){
+  today = today || todayISO();
+  cfg = Object.assign({}, TND_DEFAULT_CFG, cfg||{});
+  var af = areaFilter ? tndNorm(areaFilter) : "";
+  var Y = String(TND_YEAR);
+  var monthH = [0,0,0,0,0,0,0,0,0,0,0,0], monthC = [0,0,0,0,0,0,0,0,0,0,0,0];
+  var stat = {dentro:0, fora:0, andamento:0, nao_iniciado:0, nao_realizado:0};
+  var persons = [], areasAll = {};
+  function addCostHours(it, st){
+    var conc = it.dataConclusao||"", prazo = it.prazo||"";
+    var done = it.situacao==="concluido";
+    if(done && conc.slice(0,4)===Y) monthH[Number(conc.slice(5,7))-1] += itemHours(it);
+    var cm = (done && conc) ? conc : prazo;
+    if(cm && cm.slice(0,4)===Y) monthC[Number(cm.slice(5,7))-1] += tndNum(it.custo);
+  }
+  (docs||[]).forEach(function(d){
+    var area = d.area||"";
+    if(area) areasAll[area] = true;
+    if(af && tndNorm(area)!==af) return;
+    var items = d.items||[];
+    var tr = items.filter(function(it){ return isTrainingItem(it) && String(itemRefYear(it))===Y; });
+    tr.forEach(function(it){
+      var st = pdiItemStatus(it, today);
+      addCostHours(it, st);
+      if(st.key==="dentro") stat.dentro++; else if(st.key==="fora") stat.fora++;
+      else if(st.key==="andamento") stat.andamento++;
+      else if(st.key==="nao_iniciado") stat.nao_iniciado++;
+      else if(st.key==="atrasado" || st.key==="nao_realizado") stat.nao_realizado++;
+    });
+    // custo/horas de ações que não são "treinamento" nomeado também entram nos totais
+    items.forEach(function(it){
+      if(isTrainingItem(it) || it.situacao==="cancelado") return;
+      if(itemHours(it)>0 || tndNum(it.custo)>0) addCostHours(it, null);
+    });
+    var idx = pdiIndex(items);
+    persons.push({
+      email:d.employeeEmail||d.id, nome:d.employeeName||d.id, area:area,
+      cursos:tr.length,
+      horas:tr.reduce(function(s,it){ return s+itemHours(it); },0),
+      realizados:tr.filter(function(it){ var k=pdiItemStatus(it,today).key; return k==="dentro"||k==="fora"; }).length,
+      fora:tr.filter(function(it){ return pdiItemStatus(it,today).key==="fora"; }).length,
+      pct: idx.index==null ? null : idx.index*100
+    });
+  });
+  // registros avulsos / turmas coletivas: entram em horas e custo, não no índice individual
+  (extras||[]).forEach(function(x){
+    if(x.situacao==="cancelado") return;
+    if(af){ if(!x.area || tndNorm(x.area)!==af) return; }
+    addCostHours(x, null);
+  });
+  var withTrail = persons.filter(function(p){ return p.cursos>0; });
+  var totalH = monthH.reduce(function(a,b){ return a+b; },0);
+  var totalC = monthC.reduce(function(a,b){ return a+b; },0);
+  var monthsWithH = monthH.filter(function(h){ return h>0; }).length || 1;
+  var projH = totalH + (totalH/monthsWithH)*(12-monthsWithH);
+  var monthsWithC = monthC.filter(function(c){ return c>0; }).length || 1;
+  var projC = totalC + (totalC/monthsWithC)*(12-monthsWithC);
+  var hcs = (cfg.hcMensal||[]).filter(function(x){ return x!=null && x>0; });
+  var hc = hcs.length ? hcs.reduce(function(a,b){ return a+b; },0)/hcs.length : CATALOG.employees.length;
+  var meta = hc*tndNum(cfg.metaHorasColabAno);
+  var cumH=[], cumC=[], ch=0, cc=0;
+  for(var i=0;i<12;i++){ ch+=monthH[i]; cc+=monthC[i]; cumH.push(ch); cumC.push(cc); }
+  var withPct = withTrail.filter(function(p){ return p.pct!=null; });
+  var byArea = {};
+  withPct.forEach(function(p){ if(p.area){ (byArea[p.area]=byArea[p.area]||[]).push(p.pct); } });
+  var areaChart = Object.keys(byArea).map(function(a){ return {l:a, v:byArea[a].reduce(function(s,x){return s+x;},0)/byArea[a].length}; })
+    .sort(function(a,b){ return b.v-a.v; });
+  // mapa de calor (diagnóstico) por área
+  var hm = {};
+  (diag||[]).forEach(function(l){
+    var a = l.areaCat || l.area || ""; if(!a) return;
+    if(af && tndNorm(a)!==af && tndNorm(l.area)!==af) return;
+    var g = hm[a] = hm[a] || {a:a, f:0, o:0, fo:0, t:0};
+    [l.clsTec, l.clsComp].forEach(function(c){
+      if(!c) return; g.t++;
+      if(/Fraqueza/i.test(c)) g.f++; else if(/Oportunidade/i.test(c)) g.o++; else if(/For[cç]a/i.test(c)) g.fo++;
+    });
+  });
+  var heat = Object.keys(hm).map(function(k){ var g=hm[k]; return {a:g.a, t:g.t, f:g.t?g.f/g.t*100:0, o:g.t?g.o/g.t*100:0, fo:g.t?g.fo/g.t*100:0}; })
+    .filter(function(g){ return g.t>0; }).sort(function(a,b){ return b.f-a.f; });
+  return {
+    persons:withTrail.slice().sort(function(a,b){ return (b.pct==null?-1:b.pct)-(a.pct==null?-1:a.pct); }),
+    cursosTotal:withTrail.reduce(function(s,p){ return s+p.cursos; },0),
+    areasCount:Object.keys(byArea).length || Object.keys(areasAll).length,
+    areasAll:Object.keys(areasAll).sort(),
+    monthH:monthH, monthC:monthC, cumH:cumH, cumC:cumC, totalH:totalH, totalC:totalC,
+    budget:tndNum(cfg.budgetTotal), saldo:tndNum(cfg.budgetTotal)-totalC, budgetPct:cfg.budgetTotal? totalC/cfg.budgetTotal*100 : 0,
+    projH:projH, projC:projC, meta:meta, hc:hc, gapH:projH-meta, saldoProj:tndNum(cfg.budgetTotal)-projC,
+    monthsWithH:monthsWithH, stat:stat, areaChart:areaChart, heat:heat,
+    globalPct: withPct.length ? withPct.reduce(function(s,p){ return s+p.pct; },0)/withPct.length : null,
+    nPct: withPct.length,
+    top5: withPct.slice().sort(function(a,b){ return b.pct-a.pct; }).slice(0,5),
+    bottom5: withPct.slice().sort(function(a,b){ return a.pct-b.pct; }).slice(0,5)
+  };
+}
+
+/* ---------- gráficos simples em SVG (sem biblioteca externa) ---------- */
+function tndChart(o){
+  var W = o.w||560, H = o.h||230, pl=44, pr=12, pt=12, pb=26;
+  var n = o.labels.length, iw = W-pl-pr, ih = H-pt-pb;
+  var all = [].concat(o.bars||[], o.line||[], o.line2||[], o.ref!=null?[o.ref]:[]).filter(function(x){ return x!=null; });
+  var max = Math.max.apply(null, all.concat([1]));
+  var step = Math.pow(10, Math.floor(Math.log(max)/Math.LN10)); var top = Math.ceil(max/step)*step; if(top<max*1.05) top += step;
+  function y(v){ return pt + ih - (v/top)*ih; }
+  function x(i){ return pl + (iw/n)*(i+0.5); }
+  var s = '<svg viewBox="0 0 '+W+' '+H+'" width="100%" role="img" style="max-width:100%;height:auto;">';
+  for(var g=0; g<=4; g++){
+    var gv = top*g/4, gy = y(gv);
+    s += '<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+gy+'" y2="'+gy+'" stroke="#e6e4e0"/>'+
+         '<text x="'+(pl-6)+'" y="'+(gy+3)+'" text-anchor="end" font-size="10" fill="#8a8681">'+(o.fmtAxis?o.fmtAxis(gv):Math.round(gv))+'</text>';
+  }
+  var bw = Math.min(28, (iw/n)*0.58);
+  (o.bars||[]).forEach(function(v,i){
+    if(v==null) return;
+    var yy = y(v);
+    s += '<rect x="'+(x(i)-bw/2)+'" y="'+yy+'" width="'+bw+'" height="'+Math.max(0,pt+ih-yy)+'" rx="3" fill="'+(o.color||"#151515")+'"><title>'+o.labels[i]+': '+(o.fmt?o.fmt(v):v)+'</title></rect>';
+  });
+  function poly(arr, stroke, dash){
+    var pts = []; arr.forEach(function(v,i){ if(v!=null) pts.push(x(i)+","+y(v)); });
+    if(pts.length<2) return "";
+    var dots = arr.map(function(v,i){ return v==null?"":'<circle cx="'+x(i)+'" cy="'+y(v)+'" r="2.5" fill="'+stroke+'"/>'; }).join("");
+    return '<polyline points="'+pts.join(" ")+'" fill="none" stroke="'+stroke+'" stroke-width="2"'+(dash?' stroke-dasharray="5 4"':'')+'/>'+dots;
+  }
+  if(o.line) s += poly(o.line, o.lineColor||"#F9A522", false);
+  if(o.line2) s += poly(o.line2, o.line2Color||"#F9A522", true);
+  if(o.ref!=null) s += '<line x1="'+pl+'" x2="'+(W-pr)+'" y1="'+y(o.ref)+'" y2="'+y(o.ref)+'" stroke="#DC3333" stroke-dasharray="6 4"/>'+
+    '<text x="'+(W-pr)+'" y="'+(y(o.ref)-4)+'" text-anchor="end" font-size="10" fill="#DC3333">'+esc(o.refLabel||"")+'</text>';
+  o.labels.forEach(function(l,i){ s += '<text x="'+x(i)+'" y="'+(H-8)+'" text-anchor="middle" font-size="10" fill="#8a8681">'+esc(l)+'</text>'; });
+  return s+'</svg>';
+}
+function tndDonut(parts){
+  var tot = parts.reduce(function(s,p){ return s+p.v; },0);
+  var R=62, C=2*Math.PI*R, off=0, s='<svg viewBox="0 0 160 160" width="170" height="170" role="img">';
+  if(!tot) s += '<circle cx="80" cy="80" r="'+R+'" fill="none" stroke="#e6e4e0" stroke-width="22"/>';
+  parts.forEach(function(p){
+    if(!p.v) return;
+    var len = p.v/tot*C;
+    s += '<circle cx="80" cy="80" r="'+R+'" fill="none" stroke="'+p.c+'" stroke-width="22" stroke-dasharray="'+len+' '+(C-len)+'" stroke-dashoffset="'+(-off)+'" transform="rotate(-90 80 80)"><title>'+esc(p.l)+': '+p.v+'</title></circle>';
+    off += len;
+  });
+  s += '<text x="80" y="78" text-anchor="middle" font-size="22" font-weight="700" fill="#151515">'+tot+'</text><text x="80" y="95" text-anchor="middle" font-size="10" fill="#8a8681">treinamentos</text></svg>';
+  return '<div style="display:flex;gap:18px;flex-wrap:wrap;align-items:center;justify-content:center;">'+s+'<div style="font-size:12.5px;line-height:1.9;">'+
+    parts.map(function(p){ return '<div><span style="display:inline-block;width:10px;height:10px;border-radius:3px;background:'+p.c+';margin-right:8px;"></span>'+esc(p.l)+' <b>'+p.v+'</b></div>'; }).join("")+'</div></div>';
+}
+function tndSemaforo(p){ if(p==null) return "#c9c5bf"; return p>=80 ? "#6E9C4C" : p>=60 ? "#E2A83B" : p>=40 ? "#F9A522" : "#DC3333"; }
+
+/* ---------- tela ---------- */
+function viewTnd(){
+  renderBreadcrumb({page:"tnd"}, "Painel T&D");
+  var root = document.getElementById("view");
+  if(!isGCAdmin()){
+    root.innerHTML = '<div class="empty"><div class="big">Acesso restrito</div>O Painel T&D é restrito à equipe de Gente & Cultura.</div>';
+    return;
+  }
+  root.innerHTML = '<p class="hint" style="color:var(--text-muted)">Carregando painel…</p>';
+  var st = {docs:null, extras:null, diag:null, cfg:null}, area = "", qColab = "";
+  function ready(){ return st.docs!=null && st.extras!=null && st.diag!=null && st.cfg!=null; }
+  function fail(err){ console.error(err); toast("Não foi possível carregar o Painel T&D."); }
+  registerCleanup(listenPdis(function(list){ st.docs = list; draw(); }));
+  registerCleanup(Store.tnd("extras").onSnapshot(function(s){ st.extras = (s.exists && s.data().registros) || []; draw(); }, fail));
+  registerCleanup(Store.tnd("diagnostico").onSnapshot(function(s){ st.diag = (s.exists && s.data().linhas) || []; draw(); }, fail));
+  registerCleanup(Store.tnd("config").onSnapshot(function(s){ st.cfg = (s.exists && s.data()) || {}; draw(); }, fail));
+
+  function draw(){
+    if(!ready()) return;
+    var keepOpen = {}; root.querySelectorAll("details[data-k]").forEach(function(d){ keepOpen[d.getAttribute("data-k")] = d.open; });
+    var cfg = Object.assign({}, TND_DEFAULT_CFG, st.cfg||{});
+    var d = tndCompute(st.docs, st.extras, st.diag, cfg, area);
+    var meses = TND_MESES;
+    var pctCol = d.budgetPct>=100 ? "#DC3333" : "#C47A0E";
+    var q = qColab.toLowerCase();
+    var persons = d.persons.filter(function(p){ return !q || (p.nome||"").toLowerCase().indexOf(q)>-1; });
+    var projH = meses.map(function(_,i){ return i+1<d.monthsWithH ? null : (i+1===d.monthsWithH ? d.cumH[i] : d.cumH[Math.max(0,d.monthsWithH-1)] + (d.totalH/d.monthsWithH)*(i+1-d.monthsWithH)); });
+    var lastC = 0; d.monthC.forEach(function(c,i){ if(c>0) lastC = i; });
+    var nC = lastC+1;
+    var projCs = meses.map(function(_,i){ return i<lastC ? null : (i===lastC ? d.cumC[i] : d.cumC[lastC] + (d.totalC/nC)*(i-lastC)); });
+
+    root.innerHTML =
+      '<div class="dash-head"><div><h1>Painel T&D '+TND_YEAR+'</h1><p>Treinamento & Desenvolvimento — calculado ao vivo a partir dos PDIs. Acesso restrito à GC.</p></div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap;"><button class="btn" onclick="Router.go(\'#/pdi\')">📋 PDIs</button>'+
+        '<button class="btn" id="tnd-import">⬆️ Importar BASE (JSON)</button></div></div>'+
+      '<div class="filters" style="align-items:center;"><label for="tnd-area" style="font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;">Filtrar por área</label>'+
+        '<select id="tnd-area"><option value="">Todas as áreas</option>'+d.areasAll.map(function(a){ return '<option value="'+esc(a)+'"'+(a===area?' selected':'')+'>'+esc(a)+'</option>'; }).join("")+'</select></div>'+
+      '<div class="stat-row">'+
+        pdiStatCard(fmtHoras(d.totalH), 'Horas realizadas '+TND_YEAR+'<br><span class="hint">Meta anual: '+fmtHoras(d.meta)+' · '+fmtPct1(d.meta? d.totalH/d.meta*100 : 0)+' atingido</span>')+
+        pdiStatCard('<span style="color:'+pctCol+'">'+fmtBRL(d.totalC)+'</span>', 'Custo vs budget<br><span class="hint">Budget: '+fmtBRL(d.budget)+' · '+fmtPct1(d.budgetPct)+' consumido</span>')+
+        pdiStatCard(d.globalPct==null?'—':fmtPct1(d.globalPct), 'Índice de evolução<br><span class="hint">Média de '+d.nPct+' colaboradores</span>')+
+        pdiStatCard(d.persons.length, 'Colaboradores com trilha<br><span class="hint">'+d.cursosTotal+' cursos · '+d.areasCount+' áreas</span>')+
+      '</div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;">'+
+        '<div class="card"><div class="card-head"><h2>Horas por mês ('+TND_YEAR+')</h2></div><div class="card-body">'+
+          tndChart({labels:meses, bars:d.monthH, line:d.cumH.map(function(v,i){ return i<d.monthsWithH+1? v : null; }), fmt:fmtHoras, color:"#151515", lineColor:"#F9A522"})+
+          '<p class="hint">Barras: horas do mês · linha: acumulado</p></div></div>'+
+        '<div class="card"><div class="card-head"><h2>Custo por mês (R$)</h2></div><div class="card-body">'+
+          tndChart({labels:meses, bars:d.monthC, fmt:fmtBRL, color:"#F9A522", line:d.cumC.map(function(v,i){ return i<=lastC? v : null; }), lineColor:"#151515", fmtAxis:function(v){ return Math.round(v); }})+
+          '<p class="hint">Barras: custo do mês (no mês de conclusão; sem conclusão, no mês do prazo) · linha: acumulado</p></div></div>'+
+        '<div class="card"><div class="card-head"><h2>Status dos treinamentos</h2></div><div class="card-body">'+
+          tndDonut([{l:"Realizado dentro prazo",v:d.stat.dentro,c:"#6E9C4C"},{l:"Realizado fora prazo",v:d.stat.fora,c:"#E2A83B"},{l:"Em realização",v:d.stat.andamento,c:"#F9A522"},{l:"Não iniciado",v:d.stat.nao_iniciado,c:"#c9c5bf"},{l:"Não realizado / atraso",v:d.stat.nao_realizado,c:"#DC3333"}])+
+        '</div></div>'+
+        '<div class="card"><div class="card-head"><h2>Utilização do budget '+TND_YEAR+'</h2></div><div class="card-body">'+
+          '<div style="height:14px;background:#e6e4e0;border-radius:99px;overflow:hidden;margin:6px 0 16px;"><div style="height:100%;width:'+Math.min(100,d.budgetPct)+'%;background:'+pctCol+';"></div></div>'+
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;">'+
+            [["Budget total",fmtBRL(d.budget),"#151515"],["Realizado",fmtBRL(d.totalC),"#C47A0E"],["Saldo disponível",fmtBRL(d.saldo),"#2E7D4F"],["% consumido",fmtPct1(d.budgetPct),pctCol]].map(function(x){
+              return '<div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;"><div class="hint" style="text-transform:uppercase;font-size:10.5px;">'+x[0]+'</div><div style="font-weight:700;font-size:16px;color:'+x[2]+'">'+x[1]+'</div></div>'; }).join("")+
+          '</div></div></div>'+
+      '</div>'+
+      '<div class="card" style="margin-top:18px;"><div class="card-head"><h2>Mapa de calor de competências</h2><div class="sub">% de Fraqueza / Oportunidade / Força por área (diagnóstico individual)</div></div><div class="card-body">'+
+        (d.heat.length ? '<div class="table-wrap" style="box-shadow:none;"><table class="dash" style="min-width:560px;"><thead><tr><th>Área</th><th>Fraqueza</th><th>Oportunidade</th><th>Força</th><th>Avaliações</th></tr></thead><tbody>'+
+          d.heat.map(function(h){
+            function cell(v,c){ return '<td><div style="background:'+c+';opacity:'+(0.18+Math.min(1,v/100)*0.82)+';border-radius:6px;padding:4px 8px;text-align:center;font-weight:700;color:#151515;">'+fmtPct1(v)+'</div></td>'; }
+            return '<tr><td><b>'+esc(h.a)+'</b></td>'+cell(h.f,"#DC3333")+cell(h.o,"#F9A522")+cell(h.fo,"#6E9C4C")+'<td class="num">'+h.t+'</td></tr>'; }).join("")+'</tbody></table></div>'
+          : '<p class="hint">Sem diagnóstico carregado'+(area?' para esta área':'')+'. Importe a BASE (JSON) para trazer o diagnóstico individual.</p>')+
+      '</div></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px;">'+
+        '<div class="card"><div class="card-head"><h2>Índice de evolução por área</h2></div><div class="card-body">'+
+          (d.areaChart.length ? d.areaChart.map(function(a){ return '<div style="display:flex;align-items:center;gap:10px;margin:7px 0;font-size:12.5px;"><div style="width:140px;flex:none;">'+esc(a.l)+'</div><div style="flex:1;height:12px;background:#e6e4e0;border-radius:99px;overflow:hidden;"><div style="height:100%;width:'+Math.min(100,a.v)+'%;background:'+tndSemaforo(a.v)+';"></div></div><div class="num" style="width:54px;text-align:right;">'+fmtPct1(a.v)+'</div></div>'; }).join("") : '<p class="hint">Sem dados.</p>')+
+        '</div></div>'+
+        '<div class="card"><div class="card-head"><h2>Previsão de encerramento do ano</h2></div><div class="card-body">'+
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:10px;">'+
+            [["Horas projetadas (dez)",fmtHoras(d.projH),'Meta: '+fmtHoras(d.meta)+' · '+fmtPct1(d.meta?d.projH/d.meta*100:0)],
+             ["Custo projetado (dez)",fmtBRL(d.projC),'Budget: '+fmtBRL(d.budget)+' · '+fmtPct1(d.budget?d.projC/d.budget*100:0)],
+             ["Saldo projetado",fmtBRL(d.saldoProj),"Budget − custo projetado"],
+             ["Gap de horas",(d.gapH>=0?"+":"")+fmtHoras(d.gapH),"Para a meta anual"]].map(function(x){
+              return '<div style="background:var(--surface-2);border-radius:10px;padding:10px 12px;"><div class="hint" style="text-transform:uppercase;font-size:10.5px;">'+x[0]+'</div><div style="font-weight:700;font-size:16px;">'+x[1]+'</div><div class="hint">'+x[2]+'</div></div>'; }).join("")+
+          '</div>'+
+          '<div style="margin-top:14px;">'+tndChart({labels:meses, line:d.cumH.map(function(v,i){ return i<d.monthsWithH? v : null; }), line2:projH.map(function(v,i){ return i+1>=d.monthsWithH ? v : null; }), ref:d.meta, refLabel:"meta "+fmtHoras(d.meta), lineColor:"#151515", line2Color:"#F9A522", h:190, fmtAxis:function(v){ return Math.round(v); }})+'</div>'+
+          '<p class="hint">Projeção = média mensal dos meses com treinamento realizado × meses restantes.</p>'+
+        '</div></div>'+
+      '</div>'+
+      '<div class="card" style="margin-top:18px;"><div class="card-head"><h2>Índice de evolução por colaborador</h2><div class="sub">Semáforo: ≥80% · 60–79% · 40–59% · &lt;40%</div></div><div class="card-body">'+
+        '<div class="filters" style="margin-bottom:10px;"><input type="search" id="tnd-q" placeholder="Buscar colaborador…" value="'+esc(qColab)+'"></div>'+
+        '<div class="table-wrap" style="box-shadow:none;"><table class="dash" style="min-width:760px;"><thead><tr><th>Colaborador</th><th>Área</th><th>% Evolução</th><th>Cursos</th><th>Horas</th><th>Realizados</th><th>Fora prazo</th></tr></thead><tbody>'+
+          (persons.map(function(p){
+            return '<tr><td class="person"><div class="name"><a href="#/pdi/'+encodeURIComponent(String(p.email).toLowerCase())+'">'+esc(p.nome)+'</a></div></td><td>'+esc(p.area||"—")+'</td>'+
+              '<td><div style="display:flex;align-items:center;gap:8px;"><div style="width:90px;height:10px;background:#e6e4e0;border-radius:99px;overflow:hidden;"><div style="height:100%;width:'+(p.pct==null?0:Math.min(100,p.pct))+'%;background:'+tndSemaforo(p.pct)+';"></div></div><span class="num">'+(p.pct==null?'—':fmtPct1(p.pct))+'</span></div></td>'+
+              '<td class="num">'+p.cursos+'</td><td class="num">'+fmtHoras(p.horas)+'</td><td class="num">'+p.realizados+'</td><td class="num">'+p.fora+'</td></tr>'; }).join("") || '<tr><td colspan="7"><div class="empty">Nenhum colaborador encontrado.</div></td></tr>')+
+        '</tbody></table></div></div></div>'+
+      '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:18px;">'+
+        [["Top 5 — maior evolução",d.top5],["Necessitam de atenção",d.bottom5]].map(function(b){
+          return '<div class="card"><div class="card-head"><h2>'+b[0]+'</h2></div><div class="card-body">'+
+            (b[1].map(function(p,i){ return '<div style="display:flex;justify-content:space-between;gap:10px;padding:6px 0;border-bottom:1px solid var(--border);font-size:13px;"><span>'+(i+1)+'. <b>'+esc(p.nome)+'</b> <span class="hint">'+esc(p.area||"")+'</span></span><span class="num" style="color:'+tndSemaforo(p.pct)+';font-weight:700;">'+fmtPct1(p.pct)+'</span></div>'; }).join("") || '<p class="hint">Sem dados.</p>')+'</div></div>'; }).join("")+
+      '</div>'+
+      '<details class="card" data-k="cfg" style="margin-top:18px;"'+(keepOpen.cfg?' open':'')+'><summary class="card-head" style="cursor:pointer;"><h2>Configuração (budget, meta e headcount)</h2></summary><div class="card-body">'+
+        '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:12px;">'+
+          '<div class="field"><label for="cf-budget">Budget anual (R$)</label><input type="number" id="cf-budget" step="0.01" value="'+cfg.budgetTotal+'"></div>'+
+          '<div class="field"><label for="cf-meta">Meta de horas por colaborador/ano</label><input type="number" id="cf-meta" step="0.25" value="'+cfg.metaHorasColabAno+'"></div></div>'+
+        '<div class="field"><label>Headcount por mês <span class="hint">(em branco = ainda não informado; a meta usa a média dos meses preenchidos, ou o total do cadastro)</span></label>'+
+          '<div style="display:grid;grid-template-columns:repeat(auto-fit,minmax(70px,1fr));gap:8px;">'+
+            meses.map(function(m,i){ var v = (cfg.hcMensal||[])[i]; return '<div><div class="hint">'+m+'</div><input type="number" class="cf-hc" data-i="'+i+'" value="'+(v==null?'':v)+'"></div>'; }).join("")+'</div></div>'+
+        '<button class="btn primary" id="cf-save">Salvar configuração</button>'+
+      '</div></details>'+
+      '<details class="card" data-k="ext" style="margin-top:18px;"'+(keepOpen.ext?' open':'')+'><summary class="card-head" style="cursor:pointer;"><h2>Turmas coletivas e registros avulsos ('+st.extras.length+')</h2></summary><div class="card-body">'+
+        '<p class="hint">Treinamentos de grupo (reciclagem NR10/NR35, onboarding, compliance…) e despesas que não pertencem a um PDI individual, como a assinatura da plataforma de cursos. Entram nas horas e no custo, mas não no índice individual.</p>'+
+        '<div class="table-wrap" style="box-shadow:none;margin-bottom:12px;"><table class="dash" style="min-width:720px;"><thead><tr><th>Treinamento / despesa</th><th>Tipo</th><th>Conclusão / prazo</th><th>Horas</th><th>Part.</th><th>Custo</th><th></th></tr></thead><tbody>'+
+          (st.extras.map(function(x,i){
+            return '<tr><td>'+esc(x.nome||"")+(x.colaborador?' <span class="hint">('+esc(x.colaborador)+')</span>':'')+'</td><td>'+esc(x.tipo||"")+'</td><td class="num">'+esc(fmtDateISOtoBR(x.dataConclusao||x.prazo||""))+'</td><td class="num">'+fmtHoras(itemHours(x))+'</td><td class="num">'+(x.qtdParticipantes||1)+'</td><td class="num">'+fmtBRL(x.custo)+'</td><td><button class="btn small ext-edit" data-i="'+i+'">Editar</button></td></tr>'; }).join("") || '<tr><td colspan="7"><div class="empty">Nenhum registro.</div></td></tr>')+
+        '</tbody></table></div><button class="btn small" id="ext-add">+ Novo registro</button>'+
+      '</div></details>';
+
+    var sel = document.getElementById("tnd-area");
+    sel.addEventListener("change", function(){ area = sel.value; draw(); });
+    var qi = document.getElementById("tnd-q");
+    qi.addEventListener("input", function(){ qColab = qi.value; var pos = qi.selectionStart; draw(); var q2=document.getElementById("tnd-q"); q2.focus(); try{ q2.setSelectionRange(pos,pos); }catch(ex){} });
+    document.getElementById("tnd-import").addEventListener("click", showTndImportModal);
+    document.getElementById("cf-save").addEventListener("click", function(){
+      var hc = []; root.querySelectorAll(".cf-hc").forEach(function(inp){ hc[Number(inp.getAttribute("data-i"))] = inp.value==="" ? null : Number(inp.value); });
+      Store.tnd("config").set({budgetTotal:Number(document.getElementById("cf-budget").value)||0, metaHorasColabAno:Number(document.getElementById("cf-meta").value)||0, hcMensal:hc, updatedAt:Date.now()})
+        .then(function(){ toast("Configuração salva."); }).catch(function(err){ console.error(err); toast("Não foi possível salvar."); });
+    });
+    function saveExtras(list){ return Store.tnd("extras").set({registros:list, updatedAt:Date.now()}).catch(function(err){ console.error(err); toast("Não foi possível salvar."); }); }
+    document.getElementById("ext-add").addEventListener("click", function(){
+      showExtraModal({x:{tipo:"coletivo", nome:"", area:"", dataConclusao:"", prazo:"", cargaHoraria:0, qtdParticipantes:1, custo:0, situacao:"concluido", origemKey:"u"+Date.now().toString(36)}, isNew:true,
+        onSave:function(x){ var l = st.extras.slice(); l.push(x); return saveExtras(l); }});
+    });
+    root.querySelectorAll(".ext-edit").forEach(function(b){
+      b.addEventListener("click", function(){
+        var i = Number(b.getAttribute("data-i"));
+        showExtraModal({x:Object.assign({}, st.extras[i]), isNew:false,
+          onSave:function(x){ var l = st.extras.slice(); l[i]=x; return saveExtras(l); },
+          onDelete:function(){ var l = st.extras.slice(); l.splice(i,1); return saveExtras(l); }});
+      });
+    });
+  }
+}
+
+function showExtraModal(ctx){
+  var x = ctx.x;
+  document.getElementById("modal-host").innerHTML =
+    '<div class="modal-overlay" id="pdi-overlay"><div class="modal-card" style="max-width:560px;">'+
+      '<div class="modal-head"><h3>'+(ctx.isNew?'Novo registro':'Editar registro')+'</h3><button class="icon-btn" id="pdi-x" aria-label="Fechar">✕</button></div>'+
+      '<div class="field"><label for="ex-nome">Treinamento ou despesa</label><input type="text" id="ex-nome" value="'+esc(x.nome||"")+'"></div>'+
+      '<div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">'+
+        '<div class="field"><label for="ex-tipo">Tipo</label><select id="ex-tipo"><option value="coletivo"'+(x.tipo==="coletivo"?' selected':'')+'>Turma coletiva</option><option value="despesa"'+(x.tipo==="despesa"?' selected':'')+'>Despesa avulsa</option><option value="legado"'+(x.tipo==="legado"?' selected':'')+'>Histórico (sem cadastro)</option></select></div>'+
+        '<div class="field"><label for="ex-area">Área (opcional)</label><input type="text" id="ex-area" value="'+esc(x.area||"")+'"></div>'+
+        '<div class="field"><label for="ex-conc">Data de conclusão</label><input type="date" id="ex-conc" value="'+esc(x.dataConclusao||"")+'"></div>'+
+        '<div class="field"><label for="ex-prazo">Prazo / data planejada</label><input type="date" id="ex-prazo" value="'+esc(x.prazo||"")+'"></div>'+
+        '<div class="field"><label for="ex-h">Carga horária (h)</label><input type="number" id="ex-h" step="0.25" value="'+tndNum(x.cargaHoraria)+'"></div>'+
+        '<div class="field"><label for="ex-q">Participantes</label><input type="number" id="ex-q" value="'+(tndNum(x.qtdParticipantes)||1)+'"></div>'+
+        '<div class="field"><label for="ex-c">Custo (R$)</label><input type="number" id="ex-c" step="0.01" value="'+tndNum(x.custo)+'"></div>'+
+        '<div class="field"><label for="ex-s">Situação</label><select id="ex-s"><option value="concluido"'+(x.situacao==="concluido"?' selected':'')+'>Concluído</option><option value="nao_iniciado"'+(x.situacao!=="concluido"&&x.situacao!=="cancelado"?' selected':'')+'>Planejado</option><option value="cancelado"'+(x.situacao==="cancelado"?' selected':'')+'>Cancelado</option></select></div>'+
+      '</div>'+
+      '<div style="display:flex;gap:10px;justify-content:space-between;margin-top:8px;"><div>'+(ctx.isNew?'':'<button class="btn danger" id="ex-del">Excluir</button>')+'</div><div style="display:flex;gap:10px;"><button class="btn" id="ex-cancel">Cancelar</button><button class="btn primary" id="ex-save">Salvar</button></div></div>'+
+    '</div></div>';
+  function v(id){ return document.getElementById(id).value; }
+  document.getElementById("pdi-x").addEventListener("click", closePdiModal);
+  document.getElementById("ex-cancel").addEventListener("click", closePdiModal);
+  var del = document.getElementById("ex-del");
+  if(del) del.addEventListener("click", function(){
+    if(del.getAttribute("data-sure")!=="1"){ del.setAttribute("data-sure","1"); del.textContent="Confirmar exclusão"; return; }
+    Promise.resolve(ctx.onDelete()).then(closePdiModal);
+  });
+  document.getElementById("ex-save").addEventListener("click", function(){
+    var out = Object.assign({}, x, {nome:v("ex-nome").trim(), tipo:v("ex-tipo"), area:v("ex-area").trim(), dataConclusao:v("ex-conc"), prazo:v("ex-prazo"),
+      cargaHoraria:tndNum(v("ex-h")), qtdParticipantes:tndNum(v("ex-q"))||1, custo:tndNum(v("ex-c")), situacao:v("ex-s")});
+    if(!out.nome){ toast("Informe o nome."); return; }
+    if(out.situacao==="concluido" && !out.dataConclusao){ toast("Informe a data de conclusão."); return; }
+    if(out.situacao!=="concluido") out.dataConclusao = "";
+    Promise.resolve(ctx.onSave(out)).then(function(){ toast("Registro salvo."); closePdiModal(); });
+  });
+}
+
+/* ---------- importação da BASE_TND (JSON gerado das planilhas) ---------- */
+function showTndImportModal(){
+  document.getElementById("modal-host").innerHTML =
+    '<div class="modal-overlay" id="pdi-overlay"><div class="modal-card" style="max-width:600px;">'+
+      '<div class="modal-head"><h3>Importar BASE_TND_2026</h3><button class="icon-btn" id="pdi-x" aria-label="Fechar">✕</button></div>'+
+      '<p class="hint">Escolha o arquivo <b>tnd_importacao.json</b>. Ele <b>completa</b> as ações do PDI com plataforma, ministrante, horas, participantes e custo (sem apagar nada que já foi editado), cria as poucas ações que só existiam na BASE e traz as turmas coletivas, o diagnóstico individual e a configuração. Pode ser repetido sem duplicar.</p>'+
+      '<div class="field"><input type="file" id="tnd-file" accept=".json,application/json"></div>'+
+      '<div id="tnd-imp-info" class="hint"></div>'+
+      '<div style="display:flex;gap:10px;justify-content:flex-end;margin-top:10px;"><button class="btn" id="tnd-imp-cancel">Fechar</button><button class="btn primary" id="tnd-imp-go" disabled>Importar</button></div>'+
+    '</div></div>';
+  var parsed = null;
+  document.getElementById("pdi-x").addEventListener("click", closePdiModal);
+  document.getElementById("tnd-imp-cancel").addEventListener("click", closePdiModal);
+  document.getElementById("tnd-file").addEventListener("change", function(ev){
+    var f = ev.target.files && ev.target.files[0], info = document.getElementById("tnd-imp-info"), go = document.getElementById("tnd-imp-go");
+    parsed = null; go.disabled = true; if(!f) return;
+    var rd = new FileReader();
+    rd.onload = function(){
+      try{
+        var j = JSON.parse(rd.result);
+        if(!j || !Array.isArray(j.pessoas)) throw new Error("formato");
+        parsed = j;
+        info.textContent = j.pessoas.length+" colaboradores, "+j.pessoas.reduce(function(s,p){ return s+p.patches.length+p.newItems.length; },0)+" treinamentos, "+
+          (j.extras||[]).length+" registros coletivos/avulsos e "+(j.diagnostico||[]).length+" linhas de diagnóstico.";
+        go.disabled = false;
+      }catch(ex){ info.textContent = "Arquivo inválido — use o tnd_importacao.json gerado pelo Claude."; }
+    };
+    rd.readAsText(f);
+  });
+  document.getElementById("tnd-imp-go").addEventListener("click", function(){
+    if(!parsed) return;
+    var go = this, info = document.getElementById("tnd-imp-info"); go.disabled = true;
+    var done = 0, failed = [], chain = Promise.resolve();
+    parsed.pessoas.forEach(function(p){
+      chain = chain.then(function(){
+        var email = pdiId(p.employeeEmail);
+        var emp = {email:email, nome:p.employeeName, funcao:p.cargo, area:p.area, dtAdmissao:p.admissao, gestor:p.gestor, gestorEmail:p.managerEmail};
+        return pdiUpdateItems(email, emp, function(list){
+          p.patches.forEach(function(pt){
+            var it = list.find(function(x){ return x.origemKey===pt.origemKey; });
+            if(!it) return;
+            Object.keys(pt.fields).forEach(function(k){
+              var cur = it[k], nv = pt.fields[k];
+              if(cur==null || cur==="" || (typeof cur==="number" && cur===0) || (k==="qtdParticipantes" && cur===1)) it[k] = nv;
+            });
+          });
+          p.newItems.forEach(function(raw){
+            if(list.some(function(x){ return x.origemKey===raw.origemKey; })) return;
+            list.push(newPdiItem(raw));
+          });
+        }).then(function(){ done++; info.textContent = "Importando… "+done+" de "+parsed.pessoas.length; })
+          .catch(function(err){ console.error(err); failed.push(p.employeeName||email); });
+      });
+    });
+    chain = chain.then(function(){
+      return Store.tnd("extras").get().then(function(s){
+        var cur = (s.exists && s.data().registros) || [];
+        (parsed.extras||[]).forEach(function(x){ if(!cur.some(function(y){ return y.origemKey===x.origemKey; })) cur.push(x); });
+        return Store.tnd("extras").set({registros:cur, updatedAt:Date.now()});
+      }).catch(function(err){ console.error(err); failed.push("registros coletivos"); });
+    }).then(function(){
+      if(!(parsed.diagnostico||[]).length) return;
+      return Store.tnd("diagnostico").set({linhas:parsed.diagnostico, updatedAt:Date.now()}).catch(function(err){ console.error(err); failed.push("diagnóstico"); });
+    }).then(function(){
+      if(!parsed.config) return;
+      return Store.tnd("config").get().then(function(s){
+        if(s.exists) return; // não sobrescreve configuração já salva
+        return Store.tnd("config").set(Object.assign({updatedAt:Date.now()}, parsed.config));
+      }).catch(function(err){ console.error(err); failed.push("configuração"); });
+    }).then(function(){
+      info.textContent = "Concluído: "+done+" colaboradores processados."+(failed.length ? " Falharam: "+failed.join(", ")+"." : "");
+      go.disabled = false;
+    });
+  });
+}
+
+
+
 /* ============ Render dispatcher ============ */
 function render(){
   clearCleanup();
@@ -1920,6 +2363,7 @@ function render(){
   else if(route.page==="detail") viewDetail(route.id);
   else if(route.page==="pdi") viewPdiList();
   else if(route.page==="pdi-detail") viewPdiDetail(route.email);
+  else if(route.page==="tnd") viewTnd();
 }
 
 function updateUserBadge(user){
