@@ -1921,7 +1921,7 @@ function fmtHoras(v){ var n = Math.round(tndNum(v)*100)/100; return String(n).re
 function fmtPct1(v){ return (Math.round(tndNum(v)*10)/10).toFixed(1).replace(".",",")+"%"; }
 function itemHours(it){ return tndNum(it.cargaHoraria)*(tndNum(it.qtdParticipantes)||1); }
 function itemRefYear(it){ var r = it.prazo || it.dataConclusao || ""; return r ? Number(r.slice(0,4)) : 0; }
-var TND_ROW_FIELDS = ["local","ministrante","cargaHoraria","qtdParticipantes","custo","prazoAvaliacao","resultadoAvaliacao"];
+var TND_ROW_FIELDS = ["local","ministrante","cargaHoraria","qtdParticipantes","custo","dataAquisicao","prazoAvaliacao","resultadoAvaliacao"];
 function tndRowId(email,itemId){ return "t_"+pdiId(email).replace(/[^a-z0-9@._-]/g,"_")+"__"+itemId; }
 function tndRowPick(o){ var r={}; TND_ROW_FIELDS.forEach(function(k){ if(o && o[k]!=null) r[k]=o[k]; }); return r; }
 function tndHasData(o){ return TND_ROW_FIELDS.some(function(k){ var v=o&&o[k]; return v!=null && v!=="" && v!==0 && !(k==="qtdParticipantes"&&v===1); }); }
@@ -1957,7 +1957,8 @@ function tndCompute(docs, extras, diag, cfg, areaFilter, today){
     var conc = it.dataConclusao||"", prazo = it.prazo||"";
     var done = it.situacao==="concluido";
     if(done && conc.slice(0,4)===Y) monthH[Number(conc.slice(5,7))-1] += itemHours(it);
-    var cm = (done && conc) ? conc : prazo;
+    // o custo conta no mês da aquisição/compra (se informado); senão, no mês da conclusão ou do prazo
+    var cm = it.dataAquisicao ? it.dataAquisicao : ((done && conc) ? conc : prazo);
     if(cm && cm.slice(0,4)===Y) monthC[Number(cm.slice(5,7))-1] += tndNum(it.custo);
   }
   (docs||[]).forEach(function(d){
@@ -1974,9 +1975,9 @@ function tndCompute(docs, extras, diag, cfg, areaFilter, today){
       else if(st.key==="nao_iniciado") stat.nao_iniciado++;
       else if(st.key==="atrasado" || st.key==="nao_realizado") stat.nao_realizado++;
     });
-    // custo/horas de ações que não são "treinamento" nomeado também entram nos totais
+    // custo/horas de ações fora do recorte do ano (ex.: comprado em 2026 para concluir em 2027) ou sem treinamento nomeado também entram nos totais
     items.forEach(function(it){
-      if(isTrainingItem(it) || it.situacao==="cancelado") return;
+      if(tr.indexOf(it)>-1 || it.situacao==="cancelado") return;
       if(itemHours(it)>0 || tndNum(it.custo)>0) addCostHours(it, null);
     });
     var idx = pdiIndex(items);
@@ -2242,6 +2243,7 @@ function showExtraModal(ctx){
         '<div class="field"><label for="ex-area">Área (opcional)</label><input type="text" id="ex-area" value="'+esc(x.area||"")+'"></div>'+
         '<div class="field"><label for="ex-conc">Data de conclusão</label><input type="date" id="ex-conc" value="'+esc(x.dataConclusao||"")+'"></div>'+
         '<div class="field"><label for="ex-prazo">Prazo / data planejada</label><input type="date" id="ex-prazo" value="'+esc(x.prazo||"")+'"></div>'+
+        '<div class="field"><label for="ex-aq">Data da compra (o custo conta neste mês)</label><input type="date" id="ex-aq" value="'+esc(x.dataAquisicao||"")+'"></div>'+
         '<div class="field"><label for="ex-h">Carga horária (h)</label><input type="number" id="ex-h" step="0.25" value="'+tndNum(x.cargaHoraria)+'"></div>'+
         '<div class="field"><label for="ex-q">Participantes</label><input type="number" id="ex-q" value="'+(tndNum(x.qtdParticipantes)||1)+'"></div>'+
         '<div class="field"><label for="ex-c">Custo (R$)</label><input type="number" id="ex-c" step="0.01" value="'+tndNum(x.custo)+'"></div>'+
@@ -2258,7 +2260,7 @@ function showExtraModal(ctx){
     Promise.resolve(ctx.onDelete()).then(closePdiModal);
   });
   document.getElementById("ex-save").addEventListener("click", function(){
-    var out = Object.assign({}, x, {nome:v("ex-nome").trim(), tipo:v("ex-tipo"), area:v("ex-area").trim(), dataConclusao:v("ex-conc"), prazo:v("ex-prazo"),
+    var out = Object.assign({}, x, {nome:v("ex-nome").trim(), tipo:v("ex-tipo"), area:v("ex-area").trim(), dataConclusao:v("ex-conc"), prazo:v("ex-prazo"), dataAquisicao:v("ex-aq"),
       cargaHoraria:tndNum(v("ex-h")), qtdParticipantes:tndNum(v("ex-q"))||1, custo:tndNum(v("ex-c")), situacao:v("ex-s")});
     if(!out.nome){ toast("Informe o nome."); return; }
     if(out.situacao==="concluido" && !out.dataConclusao){ toast("Informe a data de conclusão."); return; }
@@ -2395,7 +2397,7 @@ function viewTndBase(){
     var anos = {}, areas = {};
     all.forEach(function(l){ anos[l.ano||0]=true; if(l.area) areas[l.area]=true; });
     var list = all.filter(function(l){
-      if(fAno && String(l.ano||0)!==fAno) return false;
+      if(fAno && String(l.ano||0)!==fAno && (l.it.dataAquisicao||"").slice(0,4)!==fAno) return false;
       if(fArea && l.area!==fArea) return false;
       if(fSit && l.st.key!==fSit) return false;
       if(q && (l.nome+" "+l.it.treinamento+" "+(l.it.ministrante||"")+" "+(l.it.local||"")).toLowerCase().indexOf(q.toLowerCase())<0) return false;
@@ -2418,7 +2420,7 @@ function viewTndBase(){
         list.map(function(l,i){ var it=l.it;
           return '<tr><td class="person"><div class="name">'+esc(l.nome)+'</div></td><td>'+esc(l.area)+'</td><td>'+esc(it.metodo||"")+'</td><td>'+esc(it.treinamento)+'</td>'+
             '<td>'+(it.prazo?fmtDateISOtoBR(it.prazo):'<span class="hint">—</span>')+'</td><td>'+pdiPill(l.st)+'</td><td>'+(it.dataConclusao?fmtDateISOtoBR(it.dataConclusao):'')+'</td>'+
-            '<td>'+esc(it.local||"")+'</td><td>'+esc(it.ministrante||"")+'</td><td class="num">'+(tndNum(it.cargaHoraria)||"")+'</td><td class="num">'+(tndNum(it.qtdParticipantes)||1)+'</td><td class="num">'+(tndNum(it.custo)?fmtBRL(it.custo):"")+'</td>'+
+            '<td>'+esc(it.local||"")+'</td><td>'+esc(it.ministrante||"")+'</td><td class="num">'+(tndNum(it.cargaHoraria)||"")+'</td><td class="num">'+(tndNum(it.qtdParticipantes)||1)+'</td><td class="num">'+(tndNum(it.custo)?fmtBRL(it.custo)+(it.dataAquisicao?'<div class="hint">compra '+fmtDateISOtoBR(it.dataAquisicao)+'</div>':''):"")+'</td>'+
             '<td><button class="btn tb-edit" data-i="'+i+'">Editar</button></td></tr>'; }).join("")+'</tbody></table></div>'
         : '<div class="empty"><div class="big">Nenhum treinamento neste filtro</div>Use “+ Novo treinamento” ou importe a BASE no Painel T&amp;D.</div>');
     var qi = document.getElementById("tb-q");
@@ -2459,6 +2461,7 @@ function showTrainModal(ctx){
           '<div class="field" style="margin:0;"><label for="tm-ch" class="hint">Carga horária (h)</label><input type="number" step="0.25" min="0" id="tm-ch" value="'+esc(it.cargaHoraria||"")+'"></div>'+
           '<div class="field" style="margin:0;"><label for="tm-qtd" class="hint">Qtd. participantes</label><input type="number" step="1" min="1" id="tm-qtd" value="'+esc(it.qtdParticipantes||1)+'"></div>'+
           '<div class="field" style="margin:0;"><label for="tm-custo" class="hint">Custo de aquisição (R$)</label><input type="number" step="0.01" min="0" id="tm-custo" value="'+esc(it.custo||"")+'"></div>'+
+          '<div class="field" style="margin:0;"><label for="tm-aq" class="hint">Data da compra (o custo conta neste mês)</label><input type="date" id="tm-aq" value="'+esc(/^\d{4}-\d{2}-\d{2}$/.test(it.dataAquisicao||"")?it.dataAquisicao:"")+'"></div>'+
           '<div class="field" style="margin:0;"><label for="tm-pav" class="hint">Prazo p/ avaliação de resultado</label><input type="date" id="tm-pav" value="'+esc(/^\d{4}-\d{2}-\d{2}$/.test(it.prazoAvaliacao||"")?it.prazoAvaliacao:"")+'"></div>'+
         '</div><div class="field" style="margin:8px 0 0;"><label for="tm-rav" class="hint">Resultado da avaliação</label><input type="text" id="tm-rav" value="'+esc(it.resultadoAvaliacao||"")+'"></div></div>'+
       (isNew ? '<p class="hint">Ao salvar, a ação também entra no PDI do colaborador.</p>' : '')+
@@ -2477,7 +2480,7 @@ function showTrainModal(ctx){
       cargaHoraria:Math.max(0, parseFloat(String(v("tm-ch")).replace(",","."))||0),
       qtdParticipantes:Math.max(1, parseInt(v("tm-qtd"),10)||1),
       custo:Math.max(0, parseFloat(String(v("tm-custo")).replace(",","."))||0),
-      prazoAvaliacao:v("tm-pav"), resultadoAvaliacao:v("tm-rav").trim()
+      dataAquisicao:v("tm-aq"), prazoAvaliacao:v("tm-pav"), resultadoAvaliacao:v("tm-rav").trim()
     };
     if(!email){ toast("Escolha o colaborador."); return; }
     if(!f.treinamento){ toast("Informe o nome do treinamento."); return; }
