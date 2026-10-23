@@ -320,7 +320,7 @@ table.dash tr:hover td{ background:var(--surface-2); }
     </div>
     <nav id="breadcrumb"></nav>
     <span class="no-print" id="ms-user-badge" style="font-size:12.5px;color:var(--text-muted);margin-right:4px;"></span>
-    <button class="btn small no-print" id="rh-gate-btn" onclick="showRHGateModal()" title="Acesso RH — libera o botão de imprimir/PDF">🔒 Acesso RH</button>
+    <button class="btn small no-print" id="rh-gate-btn" style="display:none" onclick="showRHGateModal()" title="Acesso RH (Gente &amp; Cultura)">🔓 Acesso RH</button>
   </header>
   <main><div class="wrap" id="view"></div></main>
 </div>
@@ -448,9 +448,9 @@ var STATUS_ORDER = ["aguardando_autoavaliacao","aguardando_gestor","aguardando_f
    senha, mas alguém que abra o código-fonte da página consegue lê-la. Ainda
    assim é o bastante para colaborador/gestor não verem o botão sem querer.
    Peça pra eu trocar a senha quando quiser. */
-var RH_PASSCODE = "ugm-rh-2026";
+
 /* ---- acesso por e-mail: RH vê tudo; colaborador/gestor só vê o que é deles ---- */
-var RH_ADMIN_EMAILS = ["angelica.bernardes@umgrauemeio.com"];
+var RH_ADMIN_EMAILS = ["angelica.bernardes@umgrauemeio.com","gabryella.franca@umgrauemeio.com"];
 function currentUserEmail(){ var u = (typeof MSAuth!=="undefined" && MSAuth.current) ? MSAuth.current() : null; return u ? (u.email||"").toLowerCase() : ""; }
 function isRHAdmin(){ return RH_ADMIN_EMAILS.indexOf(currentUserEmail())>-1; }
 function canSeeEvaluation(e){
@@ -459,13 +459,14 @@ function canSeeEvaluation(e){
   if(!mine) return false;
   return (e.employeeEmail||"").toLowerCase()===mine || (e.managerEmail||"").toLowerCase()===mine;
 }
-function isRHUnlocked(){ try{ return localStorage.getItem("rh_unlocked")==="1"; }catch(ex){ return false; } }
-function setRHUnlocked(v){ try{ localStorage.setItem("rh_unlocked", v?"1":"0"); }catch(ex){} }
+/* Acesso RH agora é pelo e-mail da conta Microsoft (Angélica e Gabryella) — sem senha compartilhada */
+function isRHUnlocked(){ return isRHAdmin(); }
+function setRHUnlocked(v){ /* sem efeito: o acesso RH vem do e-mail */ }
 function updateRHButton(){
   var btn = document.getElementById("rh-gate-btn");
   if(!btn) return;
-  if(isRHUnlocked()){ btn.innerHTML = "🔓 RH liberado"; btn.classList.add("primary"); }
-  else { btn.innerHTML = "🔒 Acesso RH"; btn.classList.remove("primary"); }
+  if(isRHAdmin()){ btn.style.display = ""; btn.innerHTML = "🔓 Acesso RH"; btn.classList.add("primary"); }
+  else { btn.style.display = "none"; }
   updateBrandHome();
 }
 /* O logo/nome no topo só volta pro painel geral quando a pessoa não chegou por
@@ -484,31 +485,15 @@ function updateBrandHome(){
 }
 function showRHGateModal(){
   var host = document.getElementById("modal-host");
-  var unlocked = isRHUnlocked();
   host.innerHTML =
     '<div class="modal-overlay" id="modal-overlay">'+
-      '<div class="modal-card" style="max-width:360px;">'+
+      '<div class="modal-card" style="max-width:420px;">'+
         '<div class="modal-head"><h3>Acesso RH</h3><button class="icon-btn" id="modal-close" aria-label="Fechar">✕</button></div>'+
-        (unlocked ?
-          '<p class="hint">Este navegador está com acesso de RH liberado (o botão de imprimir/PDF aparece nas avaliações).</p>'+
-          '<button class="btn danger" id="rh-lock">Bloquear acesso RH neste navegador</button>'
-        :
-          '<p class="hint">Só o RH deve imprimir ou exportar o PDF — a avaliação só é oficial depois de assinada. Digite a senha de acesso do RH para liberar o botão de impressão neste navegador.</p>'+
-          '<div class="field"><label for="rh-pass">Senha</label><input type="password" id="rh-pass"></div>'+
-          '<button class="btn primary" id="rh-unlock">Entrar</button>'
-        )+
+        '<p class="hint">Seu e-mail tem acesso de RH: você vê todas as avaliações e PDIs e pode imprimir/salvar em PDF e excluir avaliações. A Base de Treinamentos e o Painel T&amp;D também são só da GC.</p>'+
       '</div>'+
     '</div>';
   document.getElementById("modal-close").addEventListener("click", closeNotifyModal);
   document.getElementById("modal-overlay").addEventListener("click", function(ev){ if(ev.target.id==="modal-overlay") closeNotifyModal(); });
-  var lockBtn = document.getElementById("rh-lock");
-  if(lockBtn) lockBtn.addEventListener("click", function(){ setRHUnlocked(false); closeNotifyModal(); updateRHButton(); render(); });
-  var unlockBtn = document.getElementById("rh-unlock");
-  if(unlockBtn) unlockBtn.addEventListener("click", function(){
-    var val = document.getElementById("rh-pass").value;
-    if(val===RH_PASSCODE){ setRHUnlocked(true); closeNotifyModal(); toast("Acesso RH liberado neste navegador."); updateRHButton(); render(); }
-    else toast("Senha incorreta.");
-  });
 }
 function showDeleteConfirmModal(e, ref){
   var host = document.getElementById("modal-host");
